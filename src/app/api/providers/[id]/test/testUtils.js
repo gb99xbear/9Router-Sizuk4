@@ -18,6 +18,7 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { decodeJwtPayload } from "@/lib/oauth/providerHelpers";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -91,6 +92,23 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
   },
   "codebuddy-cn": { tokenExists: true },
+  // CodeBuddy Intl access tokens are Keycloak JWTs (iss .../auth/realms/copilot);
+  // probe the realm's userinfo endpoint so a revoked/expired token is caught.
+  // Derive the realm URL from the token's `iss` claim, falling back to the
+  // known copilot realm. 200 = valid, 401 = invalid/revoked.
+  "codebuddy-intl": {
+    buildUrl: (token) => {
+      const iss = decodeJwtPayload(token)?.iss;
+      const base = typeof iss === "string" && iss.startsWith("https://")
+        ? iss.replace(/\/$/, "")
+        : "https://www.codebuddy.ai/auth/realms/copilot";
+      return `${base}/protocol/openid-connect/userinfo`;
+    },
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    refreshable: true,
+  },
   kimchi: {
     url: KIMCHI_CONFIG.validationUrl || "https://api.cast.ai/v1/llm/openai/supported-providers",
     method: "GET",
@@ -253,7 +271,7 @@ async function refreshOAuthToken(connection) {
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
-    if (provider === "codex" || provider === "grok-cli" || provider === "xai") {
+    if (provider === "codex" || provider === "grok-cli" || provider === "xai" || provider === "codebuddy-intl") {
       return await refreshProviderCredentials(provider, connection, console);
     }
 
