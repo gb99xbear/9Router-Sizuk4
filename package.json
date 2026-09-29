@@ -1,7 +1,7 @@
 {
-  "name": "9router-app",
+  "name": "9router-sizuk4",
   "version": "1.0.13",
-  "description": "9Router web dashboard",
+  "description": "9Router Sizuk4 Edition - AI API Gateway with Multi-Upstream, Proxy Pool, & Dual-Engine Fusion",
   "private": true,
   "scripts": {
     "dev": "next dev --port 20127",
@@ -55,7 +55,7 @@
   "optionalDependencies": {
     "better-sqlite3": "^12.6.2"
   },
-  "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
+  "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools \u2014 sql.js is used as fallback at runtime",
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",
@@ -65,5 +65,6 @@
   },
   "overrides": {
     "dompurify": "^3.4.13"
-  }
+  },
+  "author": "gb99xbear & Sizuk4"
 }

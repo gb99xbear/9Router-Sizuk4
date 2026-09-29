@@ -1682,7 +1682,7 @@ export default function ProfilePage() {
           <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
           <p className="mt-1">Local Mode - All data stored on your machine</p>
           <a
-            href="https://github.com/mhiqrambg/9router-mibp-version"
+            href="https://github.com/mhiqrambg/9Router-Sizuk4-version"
             target="_blank"
             rel="noreferrer"
             className="inline-block mt-1 text-[11px] hover:text-primary transition-colors"
