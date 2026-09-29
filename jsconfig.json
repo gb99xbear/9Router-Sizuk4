@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "open-sse": ["./open-sse"],
+      "open-sse/*": ["./open-sse/*"]
+    },
+    "module": "ESNext",
+    "moduleResolution": "bundler"
+  }
+}
