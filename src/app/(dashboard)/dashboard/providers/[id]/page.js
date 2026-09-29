@@ -23,6 +23,7 @@ import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
+import PublishedCatalogCard from "./PublishedCatalogCard";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -211,6 +212,19 @@ export default function ProviderDetailPage() {
   const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)
     : providerAlias;
+  const publishedCatalogCandidates = (() => {
+    const byId = new Map();
+    const add = (model) => {
+      const id = typeof model === "string" ? model.trim() : String(model?.id || "").trim();
+      if (id && !byId.has(id)) byId.set(id, { id, name: typeof model === "object" ? model.name : undefined });
+    };
+    assignmentModels.forEach(add);
+    connections.forEach((connection) => {
+      const configured = connection?.providerSpecificData?.customModels;
+      if (Array.isArray(configured)) configured.forEach(add);
+    });
+    return [...byId.values()];
+  })();
 
   const fetchDisabledModels = useCallback(async () => {
     try {
@@ -1796,6 +1810,12 @@ export default function ProviderDetailPage() {
         )}
         {renderModelsSection()}
       </Card>
+
+      <PublishedCatalogCard
+        providerId={providerId}
+        candidates={publishedCatalogCandidates}
+        hasActiveConnections={connections.some((connection) => connection.isActive !== false)}
+      />
 
       {bulkActionModal}
 

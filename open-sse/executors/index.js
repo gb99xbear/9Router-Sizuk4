@@ -1,3 +1,4 @@
+import { DeepSeekWebExecutor } from "./deepseek-web.js";
 import { AntigravityExecutor } from "./antigravity.js";
 import { AzureExecutor } from "./azure.js";
 import { GeminiCLIExecutor } from "./gemini-cli.js";
@@ -25,6 +26,7 @@ import WindsurfExecutor from "./windsurf.js";
 import { DefaultExecutor } from "./default.js";
 import { DevinCliExecutor } from "./devin-cli.js";
 import { FreebuffExecutor } from "./freebuff.js";
+import { DhlExecutor } from "./dhl.js";
 
 const executors = {
   antigravity: new AntigravityExecutor(),
@@ -58,6 +60,10 @@ const executors = {
   windsurf: new WindsurfExecutor(),
   "devin-cli": new DevinCliExecutor(),
   freebuff: new FreebuffExecutor(),
+  "openai-compatible-chat-dhl-node": new DhlExecutor("openai-compatible-chat-dhl-node"),
+  "deepseek-web": new DeepSeekWebExecutor(),
+  "ds-web": new DeepSeekWebExecutor(),
+  dsw: new DeepSeekWebExecutor(),
 };
 
 const defaultCache = new Map();

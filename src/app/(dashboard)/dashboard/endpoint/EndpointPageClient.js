@@ -17,6 +17,7 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+import CatalogWhitelistCard from "./CatalogWhitelistCard";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +77,8 @@ export default function APIPageClient({ machineId }) {
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
+  const [catalogWhitelistEnabled, setCatalogWhitelistEnabled] = useState(false);
+  const [catalogWhitelist, setCatalogWhitelist] = useState([]);
 
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
@@ -204,6 +207,8 @@ export default function APIPageClient({ machineId }) {
         setRequireLogin(data.requireLogin !== false);
         setHasPassword(data.hasPassword || false);
         setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
+        setCatalogWhitelistEnabled(data.catalogWhitelistEnabled === true);
+        setCatalogWhitelist(Array.isArray(data.catalogWhitelist) ? data.catalogWhitelist : []);
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -237,6 +242,33 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) setTunnelDashboardAccess(value);
     } catch (error) {
       console.log("Error updating tunnelDashboardAccess:", error);
+    }
+  };
+
+  const handleToggleWhitelistEnabled = async () => {
+    const nextVal = !catalogWhitelistEnabled;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ catalogWhitelistEnabled: nextVal }),
+      });
+      if (res.ok) setCatalogWhitelistEnabled(nextVal);
+    } catch (e) {
+      console.log("Error updating catalogWhitelistEnabled:", e);
+    }
+  };
+
+  const handleSaveWhitelist = async (newList) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ catalogWhitelist: newList }),
+      });
+      if (res.ok) setCatalogWhitelist(newList);
+    } catch (e) {
+      console.log("Error saving catalogWhitelist:", e);
     }
   };
 
@@ -962,6 +994,14 @@ export default function APIPageClient({ machineId }) {
           </div>
         )}
       </Card>
+
+            {/* Model Catalog Whitelist (Sizuk4 Edition) */}
+      <CatalogWhitelistCard
+        whitelistEnabled={catalogWhitelistEnabled}
+        whitelist={catalogWhitelist}
+        onToggleEnabled={handleToggleWhitelistEnabled}
+        onSaveWhitelist={handleSaveWhitelist}
+      />
 
       {/* API Keys */}
       <Card id="require-api-key">

@@ -5,7 +5,7 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getSettings } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -18,6 +18,16 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+
+// In-memory cache for buildModelsList with stale-while-revalidate pattern.
+// TTL: 60 seconds fresh, serves stale up to 120 seconds while background refresh runs.
+const CACHE_TTL_MS = 60 * 1000;
+const STALE_TTL_MS = 120 * 1000;
+const modelsCache = new Map(); // key -> { timestamp, data, refreshingPromise }
+
+export function clearModelsCatalogCache() {
+  modelsCache.clear();
+}
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -238,10 +248,10 @@ function comboMatchesKinds(combo, kindFilter) {
 }
 
 /**
- * Build OpenAI-format models list filtered by service kinds.
+ * Raw uncached builder for OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
-export async function buildModelsList(kindFilter, options = {}) {
+async function buildModelsListUncached(kindFilter, options = {}) {
   // When this header is present, the /v1/models request came from another
   // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
   // cross-instance recursive loops.
@@ -283,6 +293,17 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
   const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
 
+  let settings = {};
+  try {
+    settings = await getSettings();
+  } catch (e) {
+    console.log("Could not fetch catalog settings");
+  }
+  const providerCatalogs = settings?.providerCatalogs && typeof settings.providerCatalogs === "object"
+    ? settings.providerCatalogs
+    : {};
+  const providerCatalogsApply = settings?.catalogWhitelistEnabled !== true;
+
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
     if (!activeConnectionByProvider.has(conn.provider)) {
@@ -307,40 +328,7 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
 
   if (connections.length === 0) {
-    // DB unavailable -> return static models, filtered by per-model kind
-    const aliasToProviderId = Object.fromEntries(
-      Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
-    );
-    for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
-      const providerId = aliasToProviderId[alias] || alias;
-      if (!providerMatchesKinds(providerId, kindFilter)) continue;
-      for (const model of providerModels) {
-        if (!kindFilter.includes(modelKind(model))) continue;
-        if (isDisabled(alias, model.id)) continue;
-        models.push({
-          id: `${alias}/${model.id}`,
-          object: "model",
-          owned_by: alias,
-        });
-      }
-    }
-
-    for (const customModel of customModels) {
-      if (!customModel?.id || (customModel.type && customModel.type !== "llm")) continue;
-      // Custom models without active connection are LLM-only by current schema
-      if (!kindFilter.includes(LLM_KIND)) continue;
-      const providerAlias = customModel.providerAlias;
-      if (!providerAlias) continue;
-
-      const modelId = String(customModel.id).trim();
-      if (!modelId) continue;
-
-      models.push({
-        id: `${providerAlias}/${modelId}`,
-        object: "model",
-        owned_by: providerAlias,
-      });
-    }
+    // No active provider connection means no provider model is published.
   } else {
     for (const [providerId, conn] of activeConnectionByProvider.entries()) {
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
@@ -352,6 +340,13 @@ export async function buildModelsList(kindFilter, options = {}) {
         || staticAlias
       ).trim();
       const providerModels = PROVIDER_MODELS[staticAlias] || [];
+      const providerCatalog = providerCatalogs[providerId];
+      const useProviderCatalog = providerCatalogsApply && providerCatalog?.enabled === true;
+      const selectedProviderModelIds = new Set(
+        useProviderCatalog && Array.isArray(providerCatalog?.modelIds)
+          ? providerCatalog.modelIds.map((modelId) => String(modelId).trim()).filter(Boolean)
+          : []
+      );
       const enabledModels = conn?.providerSpecificData?.enabledModels;
       const hasExplicitEnabledModels =
         Array.isArray(enabledModels) && enabledModels.length > 0;
@@ -461,8 +456,11 @@ export async function buildModelsList(kindFilter, options = {}) {
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
       const mergedModelIds = Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));
+      const publishedModelIds = useProviderCatalog
+        ? mergedModelIds.filter((modelId) => selectedProviderModelIds.has(modelId))
+        : mergedModelIds;
 
-      for (const modelId of mergedModelIds) {
+      for (const modelId of publishedModelIds) {
         // Resolve kind: prefer custom/live metadata, then static, then ID heuristics.
         const customKind = customModelKindById.get(modelId);
         const liveKind = liveModelKindById.get(modelId);
@@ -511,7 +509,7 @@ export async function buildModelsList(kindFilter, options = {}) {
 
       // Web search/fetch — provider IS the model, expose as {alias}/search and/or {alias}/fetch with explicit kind
       const providerInfo = AI_PROVIDERS[providerId];
-      if (kindFilter.includes("webSearch") && providerInfo?.searchConfig) {
+      if (kindFilter.includes("webSearch") && providerInfo?.searchConfig && (!useProviderCatalog || selectedProviderModelIds.has("search"))) {
         models.push({
           id: `${outputAlias}/search`,
           object: "model",
@@ -519,7 +517,7 @@ export async function buildModelsList(kindFilter, options = {}) {
           owned_by: outputAlias,
         });
       }
-      if (kindFilter.includes("webFetch") && providerInfo?.fetchConfig) {
+      if (kindFilter.includes("webFetch") && providerInfo?.fetchConfig && (!useProviderCatalog || selectedProviderModelIds.has("fetch"))) {
         models.push({
           id: `${outputAlias}/fetch`,
           object: "model",
@@ -538,7 +536,89 @@ export async function buildModelsList(kindFilter, options = {}) {
     dedupedModels.push(model);
   }
 
+  // Catalog Whitelist Filtering (Sizuk4 Edition)
+  // When catalogWhitelistEnabled is true, only broadcast models matching the whitelist.
+  // Direct completions can still reach any valid model or combo.
+  try {
+    if (settings?.catalogWhitelistEnabled && Array.isArray(settings?.catalogWhitelist) && settings.catalogWhitelist.length > 0) {
+      const whitelistItems = settings.catalogWhitelist.map(m => String(m).trim().toLowerCase()).filter(Boolean);
+      const whitelistSet = new Set(whitelistItems);
+      const filtered = dedupedModels.filter(m => {
+        const idLower = String(m.id).trim().toLowerCase();
+        // 1. Exact match (e.g. "omp/root/elf/mimo-v2.6-flash" or "HermesCombo")
+        if (whitelistSet.has(idLower)) return true;
+
+        // 2. Suffix / un-prefixed matching
+        for (const w of whitelistItems) {
+          if (idLower === w) return true;
+          if (idLower.endsWith("/" + w)) return true;
+          // Match un-prefixed base model name if user whitelisted bare model name (e.g. "gemini-3.6-flash" matches "cap/gemini-3.6-flash")
+          const parts = idLower.split("/");
+          const baseName = parts[parts.length - 1];
+          if (baseName === w) return true;
+        }
+        return false;
+      });
+      return filtered;
+    }
+  } catch (err) {
+    console.log("[v1/models] Error applying catalog whitelist filter:", err?.message || err);
+  }
+
   return dedupedModels;
+}
+
+/**
+ * Build OpenAI-format models list filtered by service kinds with in-memory caching.
+ * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
+ */
+export async function buildModelsList(kindFilter, options = {}) {
+  // If skipDynamicFetch is explicitly requested, don't use or update the main cache
+  if (options.skipDynamicFetch === true || options.noCache === true) {
+    return buildModelsListUncached(kindFilter, options);
+  }
+
+  const cacheKey = Array.isArray(kindFilter) ? [...kindFilter].sort().join(",") : String(kindFilter);
+  const now = Date.now();
+  const cached = modelsCache.get(cacheKey);
+
+  if (cached) {
+    const age = now - cached.timestamp;
+    if (age < CACHE_TTL_MS) {
+      return cached.data;
+    }
+
+    if (age < STALE_TTL_MS) {
+      // Stale-while-revalidate: trigger background refresh if not already refreshing
+      if (!cached.refreshingPromise) {
+        cached.refreshingPromise = (async () => {
+          try {
+            const fresh = await buildModelsListUncached(kindFilter, options);
+            modelsCache.set(cacheKey, {
+              timestamp: Date.now(),
+              data: fresh,
+              refreshingPromise: null,
+            });
+          } catch (err) {
+            console.log("[v1/models] Background cache refresh failed:", err?.message || err);
+            if (modelsCache.has(cacheKey)) {
+              modelsCache.get(cacheKey).refreshingPromise = null;
+            }
+          }
+        })();
+      }
+      return cached.data;
+    }
+  }
+
+  // Cache is missing or expired beyond stale TTL: fetch synchronously and cache
+  const fresh = await buildModelsListUncached(kindFilter, options);
+  modelsCache.set(cacheKey, {
+    timestamp: now,
+    data: fresh,
+    refreshingPromise: null,
+  });
+  return fresh;
 }
 
 /**

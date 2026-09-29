@@ -2,8 +2,8 @@ import pkg from "../../../package.json" with { type: "json" };
 
 // App configuration
 export const APP_CONFIG = {
-  name: "9Router Proxy",
-  description: "AI Infrastructure Management",
+  name: "9Router Sizuk4 Edition",
+  description: "AI Infrastructure Management & Gateway",
   version: pkg.version,
 };
 

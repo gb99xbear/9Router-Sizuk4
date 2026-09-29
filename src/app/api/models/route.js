@@ -1,21 +1,57 @@
 import { NextResponse } from "next/server";
-import { getModelAliases, setModelAlias, getCustomModels } from "@/models";
+import { getModelAliases, setModelAlias, getCustomModels, getProviderConnections } from "@/models";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias } from "@/shared/constants/providers";
+import { PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 
 // GET /api/models - Get models with aliases
-export async function GET() {
+export async function GET(request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const activeOnly = searchParams.get("activeOnly") === "true" || searchParams.get("activeOnly") === "1";
+
     const modelAliases = await getModelAliases();
     const disabled = await getDisabledModels();
+
+    let activeProvidersSet = null;
+    if (activeOnly) {
+      activeProvidersSet = new Set();
+      try {
+        const connections = await getProviderConnections();
+        const activeConnections = connections.filter(c => c.isActive !== false);
+        for (const conn of activeConnections) {
+          const providerId = conn.provider;
+          const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+          const outputAlias = (
+            conn?.providerSpecificData?.prefix
+            || getProviderAlias(providerId)
+            || staticAlias
+          ).trim();
+          activeProvidersSet.add(providerId);
+          activeProvidersSet.add(staticAlias);
+          activeProvidersSet.add(outputAlias);
+          const pAlias = getProviderAlias(providerId);
+          if (pAlias) activeProvidersSet.add(pAlias);
+        }
+      } catch (err) {
+        console.log("Error fetching active connections in /api/models:", err);
+      }
+    }
 
     const models = AI_MODELS
       .filter((m) => {
         const alias = getProviderAlias(m.provider) || m.provider;
         const list = disabled[alias] || disabled[m.provider] || [];
-        return !list.includes(m.model);
+        if (list.includes(m.model)) return false;
+
+        if (activeOnly && activeProvidersSet) {
+          const isProviderActive = activeProvidersSet.has(m.provider) || activeProvidersSet.has(alias);
+          if (!isProviderActive) return false;
+        }
+
+        return true;
       })
       .map((m) => {
         const fullModel = `${m.provider}/${m.model}`;
@@ -44,6 +80,11 @@ export async function GET() {
       return !seenFull.has(`${m.providerAlias}/${m.id}`);
     });
     for (const m of customModels) {
+      if (activeOnly && activeProvidersSet) {
+        const isCustomActive = activeProvidersSet.has(m.providerAlias);
+        if (!isCustomActive) continue;
+      }
+
       const fullModel = `${m.providerAlias}/${m.id}`;
       const c = getCapabilitiesForModel(m.providerAlias, m.id);
       models.push({

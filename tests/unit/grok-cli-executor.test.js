@@ -31,6 +31,8 @@ describe("grok-cli registry", () => {
     expect(oauth.referrer).toBe("grok-build");
 
     expect(PROVIDER_MODELS.gcli?.some((m) => m.id === "grok-build")).toBe(true);
+    expect(PROVIDER_MODELS.gcli?.some((m) => m.id === "grok-4.7")).toBe(true);
+    expect(PROVIDER_MODELS.gcli?.some((m) => m.id === "grok-4.7-high")).toBe(true);
   });
 
   it("is listed as oauth provider for dashboard", () => {
@@ -52,11 +54,15 @@ describe("grok-cli registry", () => {
     });
   });
 
-  it("maps effort virtual models to upstream grok-4.5", () => {
+  it("maps effort virtual models to upstream grok-4.5 and grok-4.7", () => {
     expect(getModelUpstreamId("gcli", "grok-4.5-high")).toBe("grok-4.5");
     expect(getModelUpstreamId("gcli", "grok-4.5-medium")).toBe("grok-4.5");
     expect(getModelUpstreamId("gcli", "grok-4.5-low")).toBe("grok-4.5");
     expect(getModelUpstreamId("gcli", "grok-4.5")).toBe("grok-4.5");
+    expect(getModelUpstreamId("gcli", "grok-4.7-high")).toBe("grok-4.7");
+    expect(getModelUpstreamId("gcli", "grok-4.7-medium")).toBe("grok-4.7");
+    expect(getModelUpstreamId("gcli", "grok-4.7-low")).toBe("grok-4.7");
+    expect(getModelUpstreamId("gcli", "grok-4.7")).toBe("grok-4.7");
   });
 });
 
@@ -178,6 +184,20 @@ describe("GrokCliExecutor", () => {
     expect(out.tools[0].function).toBeUndefined();
     expect(out.tools[1]).toEqual({ type: "web_search" });
     expect(out.tools[2]).toEqual({ type: "x_search" });
+  });
+
+  it("transformRequest handles grok-4.7-high", () => {
+    const body = {
+      model: "grok-4.7-high",
+      messages: [{ role: "user", content: "hi" }],
+    };
+
+    const out = executor.transformRequest("grok-4.7-high", { ...body }, true, {
+      connectionId: "conn-1",
+    });
+
+    expect(out.model).toBe("grok-4.7");
+    expect(out.reasoning).toEqual({ effort: "high", summary: "concise" });
   });
 
   it("transformRequest keeps role:system (HAR parity) and strips server ids", () => {
@@ -324,6 +344,7 @@ describe("GrokCliExecutor", () => {
 
   it("omits reasoning effort for models that reject it", () => {
     expect(supportsGrokCliReasoningEffort("grok-4.5")).toBe(true);
+    expect(supportsGrokCliReasoningEffort("grok-4.7")).toBe(true);
     expect(supportsGrokCliReasoningEffort("grok-build")).toBe(false);
     expect(supportsGrokCliReasoningEffort("grok-composer-2.5-fast")).toBe(false);
 

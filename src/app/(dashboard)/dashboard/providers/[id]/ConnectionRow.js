@@ -270,9 +270,14 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             )}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
             {connection.lastError && connection.isActive !== false && (
-              <span className="max-w-full truncate text-xs text-red-500 sm:max-w-[300px]" title={connection.lastError}>
-                {connection.lastError}
-              </span>
+              <details className="max-w-full text-xs text-red-500 sm:max-w-[300px]">
+                <summary className="cursor-pointer select-none truncate" title={connection.lastError}>
+                  {connection.lastError}
+                </summary>
+                <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-black/5 p-2 text-[11px] text-red-500 dark:bg-white/5">
+                  {connection.lastError}
+                </pre>
+              </details>
             )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
             {connection.globalPriority && (
