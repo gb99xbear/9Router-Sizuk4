@@ -35,6 +35,15 @@ export const BACKOFF_CONFIG = {
   maxLevel: 15
 };
 
+// Hard floor for any rate-limit / capacity / quota backoff, applied globally
+// inside getQuotaCooldown(). Exponential backoff alone starts at 2s, which is
+// shorter than the cooldown most upstreams actually enforce (e.g. TokenHarbor
+// says "retry in about 30 seconds"). Without a floor the account unlocks,
+// gets re-picked, and 429s again in a loop (~5 rounds before the exponential
+// value catches up). Providers with no rate-limit errors are unaffected: this
+// floor is only ever read on the backoff path.
+export const RATE_LIMIT_FLOOR_MS = 30 * 1000;
+
 // Default cooldown for transient/unknown errors
 export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 

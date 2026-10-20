@@ -18,6 +18,37 @@ const connectionWriteLocks = new Map();
 // concurrency-limit hits).
 const rrPointer = new Map();
 
+// In-flight guard: connectionId -> epoch ms until which the key is reserved.
+// Round-robin must NOT hand the same account to a second concurrent request
+// while the first is still streaming, because that re-creates the upstream
+// per-account concurrency "at capacity" 429s. A synchronous set/get keeps
+// this immune to the same snapshot race the pointer already solves.
+const inFlight = new Map();
+// Safety net only: a request that never reports back (crash, dropped stream)
+// releases after this long so the key cannot be stranded forever.
+const IN_FLIGHT_TTL_MS = 60 * 1000;
+
+function inFlightUntil(connectionId) {
+  const until = inFlight.get(connectionId);
+  if (!until) return 0;
+  if (until <= Date.now()) { inFlight.delete(connectionId); return 0; }
+  return until;
+}
+
+export function markConnectionInFlight(connectionId) {
+  if (!connectionId) return;
+  inFlight.set(connectionId, Date.now() + IN_FLIGHT_TTL_MS);
+}
+
+export function releaseConnectionInFlight(connectionId) {
+  if (connectionId) inFlight.delete(connectionId);
+}
+
+// True when the key is reserved by another live request.
+function isConnectionInFlight(connectionId) {
+  return inFlightUntil(connectionId) > 0;
+}
+
 
 export function filterConnectionsForModel(providerId, connections, model, settings = {}) {
   const override = (settings.providerStrategies || {})[providerId] || {};
@@ -201,13 +232,22 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         if (pDiff !== 0) return pDiff;
         return String(a.id || '').localeCompare(String(b.id || ''));
       });
+      // Skip keys already reserved by another live request. If EVERY key is
+      // in flight we still fall through to the raw pointer (better a possible
+      // collision than a hard failure — upstream will 429 and we rotate).
+      const free = sorted.filter((c) => !isConnectionInFlight(c.id));
+      const pool = free.length > 0 ? free : sorted;
 
-      if (sorted.length > 0) {
+      if (pool.length > 0) {
         const rkey = providerId + "::" + (model || "*");
         const prev = rrPointer.get(rkey) || 0;
-        connection = sorted[prev % sorted.length];
+        connection = pool[prev % pool.length];
         rrPointer.set(rkey, prev + 1);
       }
+
+      // Reserve the key for the lifetime of this request so a concurrent
+      // request cannot pick the same account until we release it.
+      if (connection) markConnectionInFlight(connection.id);
 
       // Persist usage for future ordering. Per-key lock serializes the DB write,
       // while the in-memory pointer already guarantees disjoint picks.
@@ -272,6 +312,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  */
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+  // Request is finished (failed) — hand the key back to the rotation pool.
+  releaseConnectionInFlight(connectionId);
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
@@ -337,6 +379,8 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
  */
 export async function clearAccountError(connectionId, currentConnection, model = null) {
   if (!connectionId || connectionId === "noauth") return;
+  // Request is finished (succeeded) — hand the key back to the rotation pool.
+  releaseConnectionInFlight(connectionId);
   const conn = currentConnection._connection || currentConnection;
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));
