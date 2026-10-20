@@ -37,6 +37,19 @@ export class CodeBuddyIntlExecutor extends DefaultExecutor {
       }
     }
 
+    // CodeBuddy v2 API requires a conversationId in the body (error 11128)
+    // Generate a stable conversation ID per request (UUID v4)
+    transformed.conversationId = (typeof crypto !== "undefined" && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : "conv-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
+
+    // CB_DUMP (temporary instrumentation): persist the exact upstream body so we
+    // can see which message shape triggers 11128 'conversation id missing'.
+    try {
+      const fs = require("fs");
+      fs.writeFileSync("/tmp/cb_upstream_body.json", JSON.stringify(transformed));
+    } catch (e) {}
+
     return transformed;
   }
 }

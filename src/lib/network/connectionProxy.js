@@ -40,9 +40,11 @@ export function pickProxyPoolId(poolIds, strategy, providerId, opts = {}) {
   if (eligible.length === 1) return eligible[0];
 
   if (strategy === "round-robin" || strategy === "smart") {
-    const state = rotateState.get(providerId) || { index: -1 };
+    const rotKey = scope || providerId || "global";
+    const state = rotateState.get(rotKey) || { index: -1 };
+    console.error("[ROTATE-DEBUG] rotKey=" + rotKey + " poolCount=" + eligible.length + " idxBefore=" + state.index + " strategy=" + strategy);
     state.index = (state.index + 1) % eligible.length;
-    rotateState.set(providerId, state);
+    rotateState.set(rotKey, state);
     return eligible[state.index];
   }
 
@@ -89,6 +91,7 @@ export async function resolveConnectionProxyConfig(
   connectionId = null,
   excludePoolIds = null
 ) {
+  console.error("[RESOLVE-DEBUG] psd keys=" + (Object.keys(providerSpecificData).join(",")) + " poolIds=" + JSON.stringify((providerSpecificData.proxyPoolIds || []).map(p=>String(p).slice(0,8))) + " strategy=" + (providerSpecificData.proxyRotationStrategy || "NONE") + " conn=" + (connectionId || "").slice(0,8));
   try {
     await ensurePoolFitnessHydrated();
     // Handle new multi-proxy format

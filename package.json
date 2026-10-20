@@ -1,6 +1,6 @@
 {
   "name": "9router-sizuk4",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "9Router Sizuk4 Edition - AI API Gateway with Multi-Upstream, Proxy Pool, & Dual-Engine Fusion",
   "private": true,
   "scripts": {

@@ -11,6 +11,8 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { resolveCodeBuddyModels } from "open-sse/services/codebuddyModels.js";
+
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -416,6 +418,24 @@ const PROVIDER_MODELS_CONFIG = {
         models: getStaticProviderModels("grok-cli"),
         warning: result.warning || "Grok CLI returned no live models; using static catalog.",
       };
+    },
+  },
+  "codebuddy-cn": {
+    customResolver: async (connection) => {
+      const result = await resolveCodeBuddyModels({ providerId: "codebuddy-cn", log: console });
+      if (result.warning) {
+        return { ...result, warning: `CodeBuddy CN: ${result.warning}` };
+      }
+      return result;
+    },
+  },
+  "codebuddy-intl": {
+    customResolver: async (connection) => {
+      const result = await resolveCodeBuddyModels({ providerId: "codebuddy-intl", log: console });
+      if (result.warning) {
+        return { ...result, warning: `CodeBuddy Intl: ${result.warning}` };
+      }
+      return result;
     },
   },
   "ollama-local": {

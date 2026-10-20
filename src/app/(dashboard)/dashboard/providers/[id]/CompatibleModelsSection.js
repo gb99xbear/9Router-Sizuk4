@@ -75,6 +75,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
   const [testingModelId, setTestingModelId] = useState(null);
   const [modelTestResults, setModelTestResults] = useState({});
 
@@ -158,6 +159,27 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     }
   };
 
+  const handleDeleteAll = async () => {
+    if (deletingAll || allModels.length === 0) return;
+    if (!confirm(`Delete ALL ${allModels.length} model(s) for this provider? This cannot be undone.`)) return;
+    setDeletingAll(true);
+    try {
+      let deleted = 0;
+      for (const { id, alias, source } of allModels) {
+        try {
+          if (source === "custom") await onDeleteCustomModel(id);
+          else await onDeleteAlias(alias);
+          deleted += 1;
+        } catch (error) {
+          console.log("Error deleting model:", id, error);
+        }
+      }
+      if (deleted === 0) alert("No models were deleted.");
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
   const canImport = connections.some((conn) => conn.isActive !== false);
 
   return (
@@ -184,6 +206,9 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         </Button>
         <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
           {importing ? "Importing..." : "Import from /models"}
+        </Button>
+        <Button size="sm" variant="danger" icon="delete_sweep" onClick={handleDeleteAll} disabled={deletingAll || allModels.length === 0}>
+          {deletingAll ? "Deleting..." : "Delete All Models"}
         </Button>
       </div>
 
