@@ -249,4 +249,6 @@ export default [
   p121,
   p122,
   p124,
+  pOC,
+  pOCZ,
 ];
