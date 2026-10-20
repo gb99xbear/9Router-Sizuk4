@@ -83,6 +83,7 @@ export default function RequestLogger() {
                   if (parts.length < 7) return null;
 
                   const status = parts[6];
+                  const errorReason = parts.length > 7 ? parts.slice(7).join(" | ") : null;
                   const isPending = status.includes("PENDING");
                   const isFailed = status.includes("FAILED");
                   const isSuccess = status.includes("OK");
@@ -104,6 +105,11 @@ export default function RequestLogger() {
                             'text-primary animate-pulse'
                         }`}>
                         {status}
+                        {errorReason && (
+                          <div className="mt-0.5 max-w-[420px] truncate font-normal text-text-muted" title={errorReason}>
+                            {errorReason}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
