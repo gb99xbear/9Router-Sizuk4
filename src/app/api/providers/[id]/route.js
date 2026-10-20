@@ -181,8 +181,10 @@ export async function PUT(request, { params }) {
           // Handle legacy single-proxy format
           if (proxyPoolResult.proxyPoolId === null) {
             delete updateData.providerSpecificData.proxyPoolId;
+            updateData.providerSpecificData.proxyPoolIds = [];
           } else {
             updateData.providerSpecificData.proxyPoolId = proxyPoolResult.proxyPoolId;
+            updateData.providerSpecificData.proxyPoolIds = [proxyPoolResult.proxyPoolId];
           }
         }
       }

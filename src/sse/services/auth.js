@@ -6,8 +6,18 @@ import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
 
-// Mutex to prevent race conditions during account selection
-let selectionMutex = Promise.resolve();
+// Per-connection write locks (not a global serialization barrier).
+// Different keys can be selected in parallel; only the same key's DB write
+// is serialized to avoid lastUsedAt / consecutiveUseCount races.
+const connectionWriteLocks = new Map();
+
+// Atomic per-provider rotating pointer for CONCURRENT round-robin spread.
+// Decisions in memory with a synchronous counter, so simultaneous requests
+// land on DIFFERENT keys instead of both reading the same stale lastUsedAt
+// snapshot and choosing the same key (the race that re-created per-key
+// concurrency-limit hits).
+const rrPointer = new Map();
+
 
 export function filterConnectionsForModel(providerId, connections, model, settings = {}) {
   const override = (settings.providerStrategies || {})[providerId] || {};
@@ -43,13 +53,16 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
-  // Acquire mutex to prevent race conditions
-  const currentMutex = selectionMutex;
-  let resolveMutex;
-  selectionMutex = new Promise(resolve => { resolveMutex = resolve; });
-
-  try {
-    await currentMutex;
+  // Per-connection lock helper: serializes the DB write for one key only.
+  const withConnectionLock = async (connId, fn) => {
+    const prev = connectionWriteLocks.get(connId) || Promise.resolve();
+    let release;
+    const next = new Promise(r => { release = r; });
+    connectionWriteLocks.set(connId, next);
+    await prev;
+    try { return await fn(); }
+    finally { release(); if (connectionWriteLocks.get(connId) === next) connectionWriteLocks.delete(connId); }
+  };
 
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
@@ -175,43 +188,34 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     if (connection) {
       // skip strategy
     } else if (strategy === "round-robin") {
-      const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
-
-      // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
-        if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-        if (!a.lastUsedAt) return 1;
-        if (!b.lastUsedAt) return -1;
-        return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
+      // Atomic in-memory pick so concurrent requests take DISJOINT keys.
+      // The old logic compared lastUsedAt snapshots in async scope; two
+      // simultaneous requests read the same snapshot and chose the SAME key
+      // before the DB write landed -> spread was ineffective and re-created
+      // per-key concurrency-limit errors. A synchronous pointer advance is
+      // immune to that race.
+      // True round-robin: Sort by stable identifier (priority, then id)
+      // so the array order remains consistent across requests.
+      const sorted = [...availableConnections].sort((a, b) => {
+        const pDiff = (a.priority || 999) - (b.priority || 999);
+        if (pDiff !== 0) return pDiff;
+        return String(a.id || '').localeCompare(String(b.id || ''));
       });
 
-      const current = byRecency[0];
-      const currentCount = current?.consecutiveUseCount || 0;
+      if (sorted.length > 0) {
+        const rkey = providerId + "::" + (model || "*");
+        const prev = rrPointer.get(rkey) || 0;
+        connection = sorted[prev % sorted.length];
+        rrPointer.set(rkey, prev + 1);
+      }
 
-      if (current && current.lastUsedAt && currentCount < stickyLimit) {
-        // Stay with current account
-        connection = current;
-        // Update lastUsedAt and increment count (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
-        });
-      } else {
-        // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
-          if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-          if (!a.lastUsedAt) return -1;
-          if (!b.lastUsedAt) return 1;
-          return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
-        });
-
-        connection = sortedByOldest[0];
-
-        // Update lastUsedAt and reset count to 1 (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
+      // Persist usage for future ordering. Per-key lock serializes the DB write,
+      // while the in-memory pointer already guarantees disjoint picks.
+      if (connection) {
+        await withConnectionLock(connection.id, () => updateProviderConnection(connection.id, {
           lastUsedAt: new Date().toISOString(),
           consecutiveUseCount: 1
-        });
+        }));
       }
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
@@ -254,9 +258,6 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // Pass full connection for clearAccountError to read modelLock_* keys
       _connection: connection
     };
-  } finally {
-    if (resolveMutex) resolveMutex();
-  }
 }
 
 /**

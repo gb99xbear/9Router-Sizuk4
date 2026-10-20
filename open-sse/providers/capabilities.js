@@ -131,6 +131,30 @@ export const MODEL_CAPABILITIES = {
   // via OpenAI Responses input_image; reasoning supports up to xhigh.
   "muse-spark-1.2-contributor-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
   "muse-spark-1.3-contributor-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  // Vyce Ai (vce) Agnes 3.0 Flash - production/API checkpoint is 512K context (the model
+  // itself reports "maximum context length is 512,000 tokens"); 9Router default 200K
+  // under-declared it and forced premature compaction.
+  "agnes-3.0-flash": { vision: false, reasoning: false, tools: true, contextWindow: 512000, maxOutput: 64000 },
+  // OpenCode Free Space Bunny - live probe 09 Okt 2026: usage 1,050,549 prompt tokens
+  // accepted (200 + marker echo); models.dev spec 1,048,576 ctx / 524,288 out.
+  // 9Router default 200K under-declared it and forced premature compaction.
+  "space-bunny-free": { vision: true, reasoning: true, thinkingFormat: null, thinkingCanDisable: true, contextWindow: 1048576, maxOutput: 524288 },
+  // OCFREE_MD_ALIGNED - values taken verbatim from models.dev (opencode provider),
+  // the same source this module's loader reads. Corrects 9Router defaults that both
+  // under- (200K on 1M models -> premature compaction) and over- (1M on 200K models
+  // -> upstream 400/truncation) claimed the window.
+  "big-pickle":                       { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "beam-free":                        { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "cat-jam-free":                     { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "deepseek-v4.1-flash-free":         { vision: true,  reasoning: true, thinkingFormat: "deepseek", contextWindow: 1048576, maxOutput: 131072 },
+  "exo-free":                         { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "ll-alpha-free":                    { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 262144,  maxOutput: 65536  },
+  "longcat-2.5-preview-free":         { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
+  "mimo-v2.6-flash-free":             { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "nemotron-3.5-lightning-free":      { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 262144,  maxOutput: 262144 },
+  "nemotron-3.5-super-vl-free":       { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "muse-spark-1.2-contributor-free":  { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "muse-spark-1.3-contributor-free":  { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
 };
 
 const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
@@ -205,6 +229,11 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v4-pro":    { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v4-flash":  { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
+    "step-5-preview":     { vision: true, videoInput: true, reasoning: true, thinkingFormat: "step", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 64000 },
+  },
+  // CodeBuddy Intl (codebuddy.ai) — same upstream family as CN; mirrors the CN caps.
+  "codebuddy-intl": {
+    "step-5-preview":     { vision: true, videoInput: true, reasoning: true, thinkingFormat: "step", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 64000 },
   },
   // Poolside Laguna — OpenAI-compatible, all reasoning-capable (32K max output).
   "poolside": {
@@ -327,6 +356,7 @@ export const PATTERN_CAPABILITIES = [
   // ── Xiaomi MiMo (vision, 1M / 262K ctx) ──────────────────────────
   { pattern: "*mimo*v2.5*",     caps: { vision: true, audioInput: true, videoInput: true, contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*mimo*omni*",     caps: { vision: true, audioInput: true, contextWindow: 262144, maxOutput: 131072 } },
+  { pattern: "*mimo*v2.6*",     caps: { vision: true, audioInput: true, videoInput: true, contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*mimo*",          caps: { vision: true, contextWindow: 262144, maxOutput: 131072 } },
 
   // ── Llama (4 = vision/1M; 3.x = text-only/128K) ──────────────────

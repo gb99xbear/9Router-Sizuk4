@@ -83,6 +83,7 @@ export default function ProviderDetailPage() {
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
+  const [importingCodeBuddyModels, setImportingCodeBuddyModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -635,6 +636,51 @@ export default function ProviderDetailPage() {
   };
 
   // Fetch Qoder model list and automatically add to available models
+  const handleImportCodeBuddyModels = async () => {
+    if (importingCodeBuddyModels) return;
+    const activeConnection = connections.find((conn) => conn.isActive !== false);
+    if (!activeConnection) {
+      alert(translate("Please add an active CodeBuddy connection first"));
+      return;
+    }
+    setImportingCodeBuddyModels(true);
+    try {
+      const res = await fetch(`/api/providers/${activeConnection.id}/models`);
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || translate("Failed to fetch models"));
+        return;
+      }
+      const models = data.models || [];
+      if (models.length === 0) {
+        alert(translate("No models returned"));
+        return;
+      }
+      let importedCount = 0;
+      for (const model of models) {
+        const modelId = model.id || model.name;
+        if (!modelId) continue;
+        const cleanModelId = modelId.replace(/^codebuddy[-a-z]*\//, "");
+        const alreadyExists = customModels.some(
+          (entry) => entry.providerAlias === providerStorageAlias && entry.id === cleanModelId && (entry.kind || entry.type || "llm") === "llm"
+        ) || Object.values(modelAliases).includes(`${providerStorageAlias}/${cleanModelId}`);
+        if (alreadyExists) continue;
+        await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias);
+        importedCount += 1;
+      }
+      if (importedCount === 0) {
+        alert(translate("All models already exist, no new models added"));
+      } else {
+        alert(translate("Successfully added") + ` ${importedCount} ` + translate("models"));
+      }
+    } catch (error) {
+      console.log("Error importing CodeBuddy models:", error);
+      alert(translate("Error fetching models") + ": " + error.message);
+    } finally {
+      setImportingCodeBuddyModels(false);
+    }
+  };
+
   const handleImportQoderModels = async () => {
     if (importingQoderModels) return;
     const activeConnection = connections.find((conn) => conn.isActive !== false);
@@ -979,10 +1025,13 @@ export default function ProviderDetailPage() {
       let failed = 0;
       for (const { connectionId, proxyPoolId } of assignments) {
         try {
+          const payload = proxyPoolId === null || proxyPoolId === "__none__"
+            ? { proxyPoolId: null, proxyPoolIds: [] }
+            : { proxyPoolId, proxyPoolIds: [proxyPoolId] };
           const res = await fetch(`/api/providers/${connectionId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ proxyPoolId }),
+            body: JSON.stringify(payload),
           });
           if (!res.ok) failed += 1;
         } catch (e) {
@@ -999,7 +1048,10 @@ export default function ProviderDetailPage() {
   };
 
   const handleApplySinglePool = (proxyPoolId) => {
-    const targets = connections.map((c) => ({ connectionId: c.id, proxyPoolId }));
+    const targetConns = selectedConnectionIds.length > 0
+      ? connections.filter((c) => selectedConnectionIds.includes(c.id))
+      : connections;
+    const targets = targetConns.map((c) => ({ connectionId: c.id, proxyPoolId }));
     return applyProxyAssignments(targets);
   };
 
@@ -1009,7 +1061,10 @@ export default function ProviderDetailPage() {
       alert("No active proxy pools available.");
       return;
     }
-    const targets = connections.map((c, i) => ({
+    const targetConns = selectedConnectionIds.length > 0
+      ? connections.filter((c) => selectedConnectionIds.includes(c.id))
+      : connections;
+    const targets = targetConns.map((c, i) => ({
       connectionId: c.id,
       proxyPoolId: activePools[i % activePools.length].id,
     }));
@@ -1109,7 +1164,7 @@ export default function ProviderDetailPage() {
     <Modal
       isOpen={showBulkProxyModal}
       onClose={closeBulkProxyModal}
-      title={`Apply Proxy (${connections.length} connections)`}
+      title={`Apply Proxy (${selectedConnectionIds.length > 0 ? selectedConnectionIds.length : connections.length} connections)`}
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-col">
@@ -1286,6 +1341,20 @@ export default function ProviderDetailPage() {
               {importingQoderModels ? "progress_activity" : "download"}
             </span>
             {importingQoderModels ? translate("Fetching...") : translate("Fetch Qoder Models")}
+          </button>
+        )}
+
+        {/* Import CodeBuddy models button — only show for codebuddy providers */}
+        {(providerId === "codebuddy-cn" || providerId === "codebuddy-intl") && connections.some((conn) => conn.isActive !== false) && (
+          <button
+            onClick={handleImportCodeBuddyModels}
+            disabled={importingCodeBuddyModels}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="material-symbols-outlined text-sm" style={importingCodeBuddyModels ? { animation: "spin 1s linear infinite" } : undefined}>
+              {importingCodeBuddyModels ? "progress_activity" : "download"}
+            </span>
+            {importingCodeBuddyModels ? translate("Fetching...") : translate("Fetch CodeBuddy Models")}
           </button>
         )}
 

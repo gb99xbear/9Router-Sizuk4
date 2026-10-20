@@ -79,6 +79,65 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
+  // Upstream ignored stream:true and replied with a single application/json
+  // completion (e.g. Puter free models). Piping that through the SSE transform
+  // yields an empty stream, which clients reject with EmptyStreamError after
+  // retries. Synthesize a compliant OpenAI SSE byte stream from the JSON and
+  // continue the normal pipeline, so usage tracking, onStreamComplete, stall
+  // timeout and [DONE] handling all still apply. Only triggers when the body
+  // is a real completion JSON; anything else falls through to the old path.
+  if (upstreamContentType.includes('application/json') && sourceFormat === FORMATS.OPENAI) {
+    const rawText = await providerResponse.text().catch(() => '');
+    let parsed = null;
+    try { parsed = JSON.parse(rawText); } catch { parsed = null; }
+    if (parsed && Array.isArray(parsed.choices) && parsed.choices.length > 0) {
+      const msg = parsed.choices[0].message || {};
+      const finishReason = parsed.choices[0].finish_reason || 'stop';
+      const base = {
+        id: parsed.id || `chatcmpl-${Date.now()}`,
+        object: 'chat.completion.chunk',
+        created: parsed.created || Math.floor(Date.now() / 1000),
+        model: parsed.model || model,
+      };
+      let content = msg.content;
+      if (Array.isArray(content)) {
+        content = content.map(p => (typeof p === 'string' ? p : (p && p.text) || '')).join('');
+      }
+      if (typeof content !== 'string') content = '';
+      const frames = [];
+      frames.push({ ...base, choices: [{ index: 0, delta: { role: msg.role || 'assistant' }, finish_reason: null }] });
+      if (content) frames.push({ ...base, choices: [{ index: 0, delta: { content }, finish_reason: null }] });
+      if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+        frames.push({ ...base, choices: [{ index: 0, delta: { tool_calls: msg.tool_calls }, finish_reason: null }] });
+      }
+      const finishFrame = { ...base, choices: [{ index: 0, delta: {}, finish_reason: finishReason }] };
+      if (parsed.usage) finishFrame.usage = parsed.usage;
+      frames.push(finishFrame);
+      const bytes = frames.map(f => `data: ${JSON.stringify(f)}\n\n`).join('') + 'data: [DONE]\n\n';
+      if (log?.line) log.line(reqTag, '⛑', `JSON->SSE synthesized · ${provider}/${model} (${bytes.length}B)`);
+      providerResponse = new Response(new TextEncoder().encode(bytes), {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    } else if (parsed && (parsed.error || parsed.choices === undefined)) {
+      // Valid JSON but not a completion (error object or unexpected shape):
+      // surface it as a clean error instead of an empty stream.
+      const errMsg = (parsed.error && (parsed.error.message || parsed.error.code)) ||
+        `upstream returned non-completion JSON (${rawText.length} bytes)`;
+      if (log?.errorLine) log.errorLine(reqTag, '✗', `JSON-BODY ${provider}/${model} · ${errMsg}`);
+      streamController?.handleError?.(new Error(errMsg));
+      return {
+        success: false,
+        response: new Response(JSON.stringify({ error: { message: errMsg } }), {
+          status: 502,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        }),
+      };
+    }
+    // JSON.parse failed (body was actually SSE or text with a JSON header):
+    // fall through to the original pipeline untouched.
+  }
+
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event

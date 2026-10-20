@@ -22,6 +22,7 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
+import { injectCustomPrompt } from "../rtk/customPrompt.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
@@ -64,7 +65,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, resolveProxyConfig }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPromptText, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, resolveProxyConfig }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -288,6 +289,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     xf.push(`PONYTAIL:${ponytailLevel}`);
   }
 
+  // Sizuk4-My-Queen: inject custom discipline directive (named slot, editable via settings)
+  if (customPromptEnabled) {
+    injectCustomPrompt(translatedBody, finalFormat, customPromptText);
+    xf.push("SIZUK4-MY-QUEEN");
+  }
+
   // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
   let pxpipeSummary = null;
   if (pxpipeEnabled) {
@@ -337,6 +344,44 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const proxyScope = `${provider}::${model}`;
   let proxyOptions = buildProxyOptions(credentials?.providerSpecificData || {});
+
+  // Multi-pool up-front resolution (round-robin): if the connection carries
+  // proxyPoolIds, resolve a concrete relay/forward-pool BEFORE the first request
+  // so first requests spread across all assigned relays (e.g. 5 Vercel IPs) for
+  // concurrency, instead of only resolving after a pool-scoped error.
+  // strictProxy stays as configured; false means a dead relay falls back to
+  // direct egress rather than failing the request.
+  const psd0 = { ...(credentials?.providerSpecificData || {}) };
+  const poolIds0 = psd0.proxyPoolIds || [];
+  const hasStickyPool0 = psd0.proxyPoolId && !psd0.vercelRelayUrl && !psd0.connectionProxyUrl;
+  console.error("[CORE-DEBUG] psd.poolIds=" + poolIds0.length + " sticky=" + hasStickyPool0 + " raw=" + JSON.stringify((psd0.proxyPoolId||"").slice(0,8)) + " scope=" + (credentials?.connectionName || credentials?.connectionId || "?"));
+  if ((poolIds0.length > 0 || hasStickyPool0) && typeof resolveProxyConfig === "function") {
+    try {
+      const resolved0 = await resolveProxyConfig(credentials, []);
+      if (resolved0 && resolved0.proxyPoolId) {
+        credentials.providerSpecificData = {
+          ...(credentials.providerSpecificData || {}),
+          connectionProxyEnabled: resolved0.connectionProxyEnabled === true,
+          connectionProxyUrl: resolved0.connectionProxyUrl || "",
+          connectionNoProxy: resolved0.connectionNoProxy || "",
+          connectionProxyPoolId: resolved0.proxyPoolId || null,
+          vercelRelayUrl: resolved0.vercelRelayUrl || "",
+          proxyPoolId: resolved0.proxyPoolId || null,
+          strictProxy: resolved0.strictProxy === true,
+        };
+        proxyOptions = buildProxyOptions(credentials.providerSpecificData);
+        console.error("[PROXY-DEBUG] up-front relay=" + (proxyOptions.vercelRelayUrl || "none") + " pool=" + (proxyOptions.proxyPoolId || "-"));
+        if (proxyOptions.vercelRelayUrl) {
+          log?.info?.(
+            "PROXY",
+            `${provider.toUpperCase()} | ${model} | conn=${credentials?.connectionName || credentials?.connectionId || "unknown"} | pool=${resolved0.proxyPoolId} | vercel-relay=${proxyOptions.vercelRelayUrl}`
+          );
+        }
+      }
+    } catch (proxyResolveErr) {
+      log?.warn?.("PROXY", `up-front pool resolve failed for ${proxyScope}: ${proxyResolveErr?.message}`);
+    }
+  }
 
   if (provider === "freebuff" && credentials?.providerSpecificData?.noFitPool === true) {
     const error = new Error(`Freebuff has no healthy proxy pool for ${model}; all assigned pools are cooling down after limited-IP errors.`);
