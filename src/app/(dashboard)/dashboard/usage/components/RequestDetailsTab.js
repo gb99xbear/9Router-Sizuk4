@@ -276,7 +276,13 @@ export default function RequestDetailsTab() {
               ) : details.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="p-8 text-center text-text-muted">
-                    No request details found
+                    <div className="flex flex-col items-center gap-1">
+                      <span>No request details found</span>
+                      <span className="text-xs">
+                        Request details are off by default because they store full prompt and response bodies.
+                        Enable them in Profile → Observability.
+                      </span>
+                    </div>
                   </td>
                 </tr>
               ) : (

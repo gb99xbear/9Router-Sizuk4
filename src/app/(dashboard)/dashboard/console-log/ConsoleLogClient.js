@@ -22,6 +22,7 @@ function colorLine(line) {
 export default function ConsoleLogClient() {
   const [logs, setLogs] = useState([]);
   const [connected, setConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
   const logRef = useRef(null);
 
   const handleClear = async () => {
@@ -36,7 +37,10 @@ export default function ConsoleLogClient() {
   useEffect(() => {
     const es = new EventSource("/api/translator/console-logs/stream");
 
-    es.onopen = () => setConnected(true);
+    es.onopen = () => {
+      setConnected(true);
+      setConnectionError(null);
+    };
 
     es.onmessage = (e) => {
       const msg = JSON.parse(e.data);
@@ -57,7 +61,26 @@ export default function ConsoleLogClient() {
       }
     };
 
-    es.onerror = () => setConnected(false);
+    // EventSource cannot read the HTTP status, so a 401 (expired dashboard
+    // session) looked identical to "no logs yet" — the page just stayed empty
+    // forever with no hint. Probe the endpoint once on failure to tell the two
+    // apart and surface the real cause.
+    es.onerror = () => {
+      setConnected(false);
+      if (es.readyState === EventSource.CLOSED) {
+        fetch("/api/translator/console-logs", { cache: "no-store" })
+          .then((res) => {
+            if (res.status === 401 || res.status === 403) {
+              setConnectionError("Your dashboard session expired. Sign in again, then reload this page.");
+            } else if (!res.ok) {
+              setConnectionError(`Could not reach the log stream (HTTP ${res.status}).`);
+            } else {
+              setConnectionError("Log stream disconnected. Reload the page to reconnect.");
+            }
+          })
+          .catch(() => setConnectionError("Log stream disconnected. Reload the page to reconnect."));
+      }
+    };
 
     return () => es.close();
   }, []);
@@ -76,12 +99,23 @@ export default function ConsoleLogClient() {
             Clear
           </Button>
         </div>
+        {connectionError && (
+          <div className="mx-4 mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+            {connectionError}
+          </div>
+        )}
         <div
           ref={logRef}
           className="bg-black rounded-b-lg p-4 text-xs font-mono h-[calc(100vh-220px)] overflow-y-auto"
         >
           {logs.length === 0 ? (
-            <span className="text-text-muted">No console logs yet.</span>
+            <span className="text-text-muted">
+              {connectionError
+                ? "Not connected — no logs can be shown."
+                : connected
+                  ? "No console logs yet."
+                  : "Connecting to log stream…"}
+            </span>
           ) : (
             <div className="space-y-0.5">
               {logs.map((line, i) => (
