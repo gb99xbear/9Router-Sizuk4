@@ -26,7 +26,7 @@ const rrPointer = new Map();
 const inFlight = new Map();
 // Safety net only: a request that never reports back (crash, dropped stream)
 // releases after this long so the key cannot be stranded forever.
-const IN_FLIGHT_TTL_MS = 10 * 60 * 1000;
+const IN_FLIGHT_TTL_MS = 60 * 1000;
 
 function inFlightUntil(connectionId) {
   const until = inFlight.get(connectionId);
