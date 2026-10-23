@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the OpenCode egress auto-rotate check every 15 minutes (finds a fresh WARP egress when every IP is cooling)
+Documentation=file:/home/ubuntu/tools/oc-egress-rotator/README.md
+
+[Timer]
+OnBootSec=5min
+OnCalendar=*:0/15
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
