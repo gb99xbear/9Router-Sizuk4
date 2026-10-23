@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="opencode-free-9router social preview">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#111c33"/>
+    </linearGradient>
+    <linearGradient id="rail" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="0.5" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#f472b6"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fde047"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="8" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <g opacity="0.08" stroke="#38bdf8" stroke-width="1">
+    <path d="M0 80 H1280 M0 160 H1280 M0 240 H1280 M0 320 H1280 M0 400 H1280 M0 480 H1280 M0 560 H1280"/>
+    <path d="M80 0 V640 M160 0 V640 M240 0 V640 M320 0 V640 M400 0 V640 M480 0 V640 M560 0 V640 M640 0 V640 M720 0 V640 M800 0 V640 M880 0 V640 M960 0 V640 M1040 0 V640 M1120 0 V640 M1200 0 V640"/>
+  </g>
+
+  <!-- logo mark -->
+  <g transform="translate(90,180)">
+    <rect width="280" height="280" rx="64" fill="#0f172a" stroke="#334155" stroke-width="2"/>
+    <g stroke="url(#rail)" stroke-width="13" stroke-linecap="round">
+      <path d="M92 92 H188" opacity="1"/>
+      <path d="M92 92 V188" opacity="0.55"/>
+      <path d="M188 92 V188" opacity="0.55"/>
+      <path d="M92 188 H188" opacity="1"/>
+    </g>
+    <circle cx="92" cy="92" r="15" fill="#0b1220" stroke="#38bdf8" stroke-width="6"/>
+    <circle cx="188" cy="92" r="15" fill="#0b1220" stroke="#38bdf8" stroke-width="6"/>
+    <circle cx="92" cy="188" r="15" fill="#0b1220" stroke="#f472b6" stroke-width="6"/>
+    <circle cx="188" cy="188" r="15" fill="#0b1220" stroke="#f472b6" stroke-width="6"/>
+    <path d="M140 108 L112 158 H136 L126 190 L166 136 H142 L154 108 Z" fill="url(#bolt)" stroke="#78350f" stroke-width="4" stroke-linejoin="round" filter="url(#glow)"/>
+  </g>
+
+  <!-- text -->
+  <text x="430" y="288" font-family="ui-sans-serif, system-ui, Segoe UI, Roboto, sans-serif" font-size="64" font-weight="800" fill="#f8fafc">opencode-free-9router</text>
+  <text x="432" y="350" font-family="ui-sans-serif, system-ui, Segoe UI, Roboto, sans-serif" font-size="30" font-weight="500" fill="#94a3b8">OpenCode Zen free models, as one OpenAI-compatible</text>
+  <text x="432" y="392" font-family="ui-sans-serif, system-ui, Segoe UI, Roboto, sans-serif" font-size="30" font-weight="500" fill="#94a3b8">provider for 9Router. No OpenCode account required.</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24">
+    <rect x="432" y="440" width="150" height="48" rx="24" fill="#1e293b" stroke="#334155"/>
+    <text x="507" y="472" fill="#7dd3fc" text-anchor="middle">$0 / month</text>
+    <rect x="594" y="440" width="196" height="48" rx="24" fill="#1e293b" stroke="#334155"/>
+    <text x="692" y="472" fill="#c4b5fd" text-anchor="middle">10 free models</text>
+    <rect x="802" y="440" width="176" height="48" rx="24" fill="#1e293b" stroke="#334155"/>
+    <text x="890" y="472" fill="#f9a8d4" text-anchor="middle">0 dependencies</text>
+  </g>
+</svg>

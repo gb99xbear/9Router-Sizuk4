@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="opencode-free-9router logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="rail" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="0.5" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#f472b6"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fde047"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect x="18" y="18" width="476" height="476" rx="96" fill="none" stroke="#334155" stroke-width="2" opacity="0.6"/>
+
+  <!-- three router rails -->
+  <g stroke="url(#rail)" stroke-width="18" stroke-linecap="round">
+    <path d="M150 150 H362" opacity="1"/>
+    <path d="M150 150 V362" opacity="0.55"/>
+    <path d="M362 150 V362" opacity="0.55"/>
+    <path d="M150 362 H362" opacity="1"/>
+  </g>
+
+  <!-- routed nodes -->
+  <circle cx="150" cy="150" r="24" fill="#0b1220" stroke="#38bdf8" stroke-width="8"/>
+  <circle cx="362" cy="150" r="24" fill="#0b1220" stroke="#38bdf8" stroke-width="8"/>
+  <circle cx="150" cy="362" r="24" fill="#0b1220" stroke="#f472b6" stroke-width="8"/>
+  <circle cx="362" cy="362" r="24" fill="#0b1220" stroke="#f472b6" stroke-width="8"/>
+
+  <!-- free bolt in the middle -->
+  <path d="M256 196 L214 272 H252 L236 322 L300 240 H262 L282 196 Z"
+        fill="url(#bolt)" stroke="#78350f" stroke-width="6" stroke-linejoin="round" filter="url(#glow)"/>
+
+  <!-- zero-cost badge -->
+  <g>
+    <rect x="300" y="232" width="128" height="48" rx="24" fill="#16a34a"/>
+    <text x="364" y="264" font-family="ui-sans-serif, system-ui, Segoe UI, Roboto, sans-serif"
+          font-size="26" font-weight="800" fill="#ffffff" text-anchor="middle">$0</text>
+  </g>
+</svg>

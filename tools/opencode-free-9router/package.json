@@ -1,0 +1,59 @@
+{
+  "name": "opencode-free-9router",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Expose the OpenCode Zen free-tier models as an OpenAI-compatible provider for 9Router. No OpenCode account required.",
+  "keywords": [
+    "9router",
+    "opencode",
+    "opencode-zen",
+    "free-models",
+    "openai-compatible",
+    "ai-router",
+    "llm-proxy",
+    "llm-gateway"
+  ],
+  "license": "MIT",
+  "author": "0xgetz",
+  "homepage": "https://github.com/0xgetz/opencode-free-9router#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/0xgetz/opencode-free-9router.git"
+  },
+  "bugs": {
+    "url": "https://github.com/0xgetz/opencode-free-9router/issues"
+  },
+  "bin": {
+    "opencode-free-adapter": "./src/adapter.js",
+    "opencode-free-connect": "./src/connect-9router.js",
+    "opencode-free": "./src/cli.js",
+    "opencode-free-selftest": "./src/selftest.js"
+  },
+  "main": "./src/opencode_free.js",
+  "exports": {
+    ".": "./src/opencode_free.js",
+    "./adapter": "./src/adapter.js"
+  },
+  "files": [
+    "src",
+    "docs",
+    "assets",
+    "STRUCTURE.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node src/adapter.js",
+    "adapter": "node src/adapter.js",
+    "connect": "node src/connect-9router.js",
+    "list": "node src/cli.js list",
+    "check": "node src/cli.js check",
+    "test": "node src/selftest.js",
+    "test:live": "node src/selftest.js --live"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {}
+}
