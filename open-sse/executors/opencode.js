@@ -132,6 +132,12 @@ function normalizeOpencodeReasoning(model, body) {
 
 const IP_LIMIT_BODY = /limit|rate|quota|exhausted|capacity|too many|retry|FreeTierError/i;
 
+// Scoped fast-fail window for the OpenCode free tier (oc-unlimited #3/#4).
+// A drained free-tier bucket is shared public capacity, not a dead account, so
+// the connection must come back in under a second and fail over on the next
+// request. The global 429 ladder is untouched: TokenHarbor keeps its 30s floor.
+const OPENCODE_FAST_FAIL_MS = 1000;
+
 export class OpenCodeExecutor extends BaseExecutor {
   constructor() {
     super("opencode", PROVIDERS.opencode);
@@ -171,7 +177,14 @@ export class OpenCodeExecutor extends BaseExecutor {
     const downstreamUa = lower["user-agent"] || "";
     const ua = hasValidOpenCodeVersion(downstreamUa) ? downstreamUa : DEFAULT_OPENCODE_UA;
 
-    let session = this._currentSessionId || lower["x-opencode-session"];
+    // Per-request session rotation (oc-unlimited): a real canonical ses_ id
+    // supplied by the caller is still honoured; anything else (including the
+    // per-connection cached session) is discarded so every request draws a
+    // fresh free-tier quota instead of reusing one exhausted bucket.
+    let session = lower["x-opencode-session"];
+    if (session && !OPENCODE_SESSION_REGEX.test(String(session).trim())) {
+      session = null;
+    }
     if (session) {
       session = translateOpenCodeSessionId(session);
     } else {
@@ -200,6 +213,9 @@ export class OpenCodeExecutor extends BaseExecutor {
         status,
         message: text.slice(0, 300) || `OpenCode free limit (${status})`,
         poolScoped: { reason: "ip-limit" },
+        // Sub-second release: markAccountUnavailable honours resetsAtMs ahead
+        // of the exponential ladder, so this never pins the connection.
+        resetsAtMs: Date.now() + OPENCODE_FAST_FAIL_MS,
       };
     }
     return null;
