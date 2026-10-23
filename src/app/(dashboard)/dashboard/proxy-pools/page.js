@@ -39,7 +39,7 @@ export default function ProxyPoolsPage() {
   const [editingProxyPool, setEditingProxyPool] = useState(null);
   const [formData, setFormData] = useState(normalizeFormData());
   const [batchImportText, setBatchImportText] = useState("");
-  const [vercelForm, setVercelForm] = useState({ vercelToken: "", projectName: "vercel-relay" });
+  const [vercelForm, setVercelForm] = useState({ vercelToken: "", projectName: "vercel-relay", count: 100, workers: 10 });
   const [cloudflareForm, setCloudflareForm] = useState({ accountId: "", apiToken: "", projectName: "cloudflare-relay" });
   const [denoForm, setDenoForm] = useState({ denoToken: "", orgDomain: "", projectName: "" });
   const [saving, setSaving] = useState(false);
@@ -343,7 +343,7 @@ export default function ProxyPoolsPage() {
   };
 
   const openVercelModal = () => {
-    setVercelForm({ vercelToken: "", projectName: "vercel-relay" });
+    setVercelForm({ vercelToken: "", projectName: "vercel-relay", count: 100, workers: 10 });
     setShowVercelModal(true);
   };
 
@@ -385,7 +385,13 @@ export default function ProxyPoolsPage() {
       if (res.ok) {
         await fetchProxyPools();
         closeVercelModal();
-        notify.success(`Deployed: ${data.deployUrl}`);
+        if (data.total > 1) {
+          const okMsg = `Created ${data.created}/${data.total} relay${data.failed ? `, ${data.failed} failed` : ""} (${Math.round((data.elapsedMs || 0) / 1000)}s)`;
+          if (data.failed > 0) notify.error(okMsg);
+          else notify.success(okMsg);
+        } else {
+          notify.success(`Deployed: ${data.deployUrl}`);
+        }
       } else {
         notify.error(data.error || "Deploy failed");
       }
@@ -835,19 +841,41 @@ export default function ProxyPoolsPage() {
             type="password"
           />
           <Input
-            label="Project Name"
+            label="Project Name Prefix"
             value={vercelForm.projectName}
             onChange={(e) => setVercelForm((prev) => ({ ...prev, projectName: e.target.value }))}
-            placeholder="my-relay"
-            hint="Unique name for your Vercel project. Leave empty for auto-generated name."
+            placeholder="vercel-relay"
+            hint="Each proxy gets an auto-suffixed name like vercel-relay-m2k9x1-1. Leave empty for auto-generated prefix."
           />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Input
+              label="Jumlah Proxy (Auto Create Count)"
+              type="number"
+              min={1}
+              max={100}
+              value={vercelForm.count}
+              onChange={(e) => setVercelForm((prev) => ({ ...prev, count: Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 100) }))}
+              hint="1 - 100"
+            />
+            <Input
+              label="Workers (Parallel)"
+              type="number"
+              min={1}
+              max={10}
+              value={vercelForm.workers}
+              onChange={(e) => setVercelForm((prev) => ({ ...prev, workers: Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 10) }))}
+              hint="Parallelism 1 - 10"
+            />
+          </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button
               fullWidth
               onClick={handleVercelDeploy}
               disabled={!vercelForm.vercelToken.trim() || deploying}
             >
-              {deploying ? "Deploying... (may take ~1 min)" : "Deploy"}
+              {deploying
+                ? `Creating ${vercelForm.count} Proxy... (may take a few min)`
+                : `Auto Create ${vercelForm.count} Proxy Vercel`}
             </Button>
             <Button fullWidth variant="ghost" onClick={closeVercelModal} disabled={deploying}>
               Cancel

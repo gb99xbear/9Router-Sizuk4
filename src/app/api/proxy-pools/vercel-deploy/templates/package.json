@@ -1,0 +1,18 @@
+{
+  "name": "vercel-api-proxy",
+  "version": "1.0.0",
+  "description": "Vercel API Proxy serverless function",
+  "main": "api/proxy.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "keywords": [
+    "vercel",
+    "proxy",
+    "api-proxy",
+    "serverless"
+  ],
+  "author": "",
+  "license": "MIT"
+}

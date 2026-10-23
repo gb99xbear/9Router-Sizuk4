@@ -110,6 +110,9 @@ export const MODEL_CAPABILITIES = {
   // GLM vision variants (text GLM has no vision) — 5.3-Flash and 5V-Turbo are
   // natively multimodal per z.ai, and 5.3-Flash carries the full 1M window.
   "glm-5.3-flash":     { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "zai", contextWindow: 1000000, maxOutput: 131072 },
+  // gonk (GonkaRouter) custom full-id + case variant: real window 1,310,720 (1.3M) - Bear confirmed 20261022
+  "zai-org/GLM-5.3-Flash": { reasoning: true, thinkingFormat: "zai", thinkingEffortSupported: true, contextWindow: 1310720, maxOutput: 128000 },
+  "GLM-5.3-Flash":         { reasoning: true, thinkingFormat: "zai", thinkingEffortSupported: true, contextWindow: 1310720, maxOutput: 128000 },
   "glm-4.6v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 128000, maxOutput: 32768 },
   "glm-4.5v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 64000, maxOutput: 16384 },
 

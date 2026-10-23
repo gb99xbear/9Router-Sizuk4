@@ -4,6 +4,7 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
+  releaseConnectionInFlight,
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
@@ -321,13 +322,70 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       },
       onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
-        // "Consecutive" strikes: a success clears the breaker for this pair.
+        // NOTE: do NOT release the in-flight reservation here. This callback
+        // fires as soon as upstream headers arrive, while the response is
+        // still streaming (can run 30-120s for large contexts). Releasing
+        // here lets a concurrent request pick the same account mid-stream,
+        // which upstream reports as 429 "at capacity for your account".
+        // clearAccountError() is deferred to settleInFlight() below.
         clearAntigravityStrikes(credentials.connectionId, model);
       }
     });
 
-    if (result.success) return result.response;
+    // Release the in-flight reservation ONLY when the response is fully done:
+    // success -> clear error state; failure -> markAccountUnavailable already
+    // released it. Streaming responses settle on 'close' of the client signal.
+    const settleInFlight = async () => {
+      try {
+        await clearAccountError(credentials.connectionId, credentials, model);
+      } catch (err) {
+        console.error("[chat] settleInFlight failed:", err?.message || err);
+      }
+    };
+
+    if (result.success) {
+      const resp = result.response;
+      if (resp && resp.body) {
+        // Streamed response: hand the key back when the body closes.
+        const originalBody = resp.body;
+        try {
+          const reader = originalBody.getReader ? originalBody : null;
+          if (reader) {
+            const wrapped = new ReadableStream({
+              start(controller) {
+                const pump = () => {
+                  reader.read().then(({ done, value }) => {
+                    if (done) {
+                      controller.close();
+                      settleInFlight();
+                      return;
+                    }
+                    controller.enqueue(value);
+                    pump();
+                  }).catch((err) => {
+                    try { controller.error(err); } catch {}
+                    settleInFlight();
+                  });
+                };
+                pump();
+              },
+              cancel() {
+                settleInFlight();
+              }
+            });
+            return new Response(wrapped, {
+              status: resp.status,
+              statusText: resp.statusText,
+              headers: resp.headers
+            });
+          }
+        } catch (err) {
+          console.error("[chat] stream wrap failed, falling back:", err?.message || err);
+        }
+      }
+      settleInFlight();
+      return result.response;
+    }
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;

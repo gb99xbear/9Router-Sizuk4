@@ -50,6 +50,14 @@ export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 // Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
 export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
+// When an upstream sends Retry-After we trust it instead of the exponential
+// ladder: a healthy provider that says "60" should not be locked for 5 min.
+export const RETRY_AFTER_MAX_MS = 10 * 60 * 1000;
+
+// Backoff ladder ceiling for plain 429s without a Retry-After hint. The old
+// 5 min ceiling made a transient throttle look like a dead account.
+export const RATE_LIMIT_BACKOFF_MAX_MS = 3 * 60 * 1000;
+
 // Cooldown durations (ms)
 const COOLDOWN = {
   long: 2 * 60 * 1000,
@@ -75,6 +83,11 @@ export const ERROR_RULES = [
   { text: "quota exceeded",           backoff: true },
   { text: "capacity",                 backoff: true },
   { text: "overloaded",               backoff: true },
+  // TokenHarbor-style capacity throttling: it clears in ~60s, so treat it
+  // as a short, capped backoff instead of the full 429 ladder.
+  { text: "under heavy load",         backoff: true, maxLevel: 3 },
+  { text: "server_busy",              backoff: true, maxLevel: 3 },
+  { text: "server busy",              backoff: true, maxLevel: 3 },
 
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long },

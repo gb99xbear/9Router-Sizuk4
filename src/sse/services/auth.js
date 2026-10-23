@@ -310,7 +310,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @param {string|null} model - The specific model that triggered the error
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
-export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
+export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, retryAfterMs = 0) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
   // Request is finished (failed) — hand the key back to the rotation pool.
   releaseConnectionInFlight(connectionId);
@@ -341,7 +341,8 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
         : Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
     newBackoffLevel = 0;
   } else {
-    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+    const hintMs = retryAfterMs > 0 ? retryAfterMs : parseRetryAfterMs(errorText, null);
+    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel, hintMs));
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
@@ -418,6 +419,59 @@ export async function clearAccountError(connectionId, currentConnection, model =
   }
 
   await updateProviderConnection(connectionId, clearObj);
+}
+
+/**
+ * Extract Retry-After from either response headers or the JSON error body.
+ * Upstreams put it in three different places:
+ *   - a real HTTP header (TokenHarbor, most OpenAI-compatible servers)
+ *   - a JSON body field: {"error": {"retry_after": 60}} or retryAfter
+ *   - human text: "retry shortly" with no number (returns 0, ladder applies)
+ * Returns milliseconds, or 0 when unknown.
+ */
+function parseRetryAfterMs(errorText, headers) {
+  // 1) real header
+  try {
+    const h = headers && (headers.get ? headers.get("retry-after") : headers["retry-after"]);
+    if (h != null) {
+      const secs = Number(String(h).trim());
+      if (Number.isFinite(secs) && secs > 0) return secs * 1000;
+      const when = Date.parse(String(h));
+      if (Number.isFinite(when)) {
+        const ms = when - Date.now();
+        if (ms > 0) return ms;
+      }
+    }
+  } catch (e) {}
+  // 2) JSON body
+  try {
+    const body = typeof errorText === "string" ? JSON.parse(errorText) : errorText;
+    const cands = [
+      body?.error?.retry_after,
+      body?.error?.retryAfter,
+      body?.retry_after,
+      body?.retryAfter
+    ];
+    for (const c of cands) {
+      const secs = Number(c);
+      if (Number.isFinite(secs) && secs > 0) return secs * 1000;
+    }
+  } catch (e) {}
+  // 3) "retry in 60 seconds" inside the message
+  try {
+    const txt = typeof errorText === "string" ? errorText : JSON.stringify(errorText || "");
+    const m = txt.match(/retry[^0-9]{0,40}(\d{1,5})\s*(second|sec|s\b)/i);
+    if (m) {
+      const secs = Number(m[1]);
+      if (Number.isFinite(secs) && secs > 0) return secs * 1000;
+    }
+    const m2 = txt.match(/retry[^0-9]{0,40}(\d{1,5})\s*(minute|min)/i);
+    if (m2) {
+      const mins = Number(m2[1]);
+      if (Number.isFinite(mins) && mins > 0) return mins * 60 * 1000;
+    }
+  } catch (e) {}
+  return 0;
 }
 
 /**
