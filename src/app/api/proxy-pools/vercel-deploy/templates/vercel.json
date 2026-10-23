@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/__relay_ip",
+      "destination": "/api/relay_ip.js"
+    },
+    {
+      "source": "/api/health",
+      "destination": "/api/health.js"
+    },
+    {
+      "source": "/api/proxy",
+      "destination": "/api/proxy.js"
+    },
+    {
+      "source": "/api/proxy/(.*)",
+      "destination": "/api/proxy.js?path=$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/api/proxy.js?path=$1"
+    }
+  ]
+}

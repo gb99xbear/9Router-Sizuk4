@@ -1,4 +1,4 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS, RATE_LIMIT_FLOOR_MS } from "../config/errorConfig.js";
+import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS, RATE_LIMIT_FLOOR_MS, RETRY_AFTER_MAX_MS, RATE_LIMIT_BACKOFF_MAX_MS } from "../config/errorConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -11,7 +11,8 @@ export function getQuotaCooldown(backoffLevel = 0) {
   const cooldown = BACKOFF_CONFIG.base * Math.pow(2, level);
   // Clamp to the hard floor so the first few backoff levels can't undercut the
   // cooldown the upstream actually enforces (avoids the 429 re-pick loop).
-  return Math.min(Math.max(cooldown, RATE_LIMIT_FLOOR_MS), BACKOFF_CONFIG.max);
+  const ceiling = Math.min(BACKOFF_CONFIG.max, RATE_LIMIT_BACKOFF_MAX_MS);
+  return Math.min(Math.max(cooldown, RATE_LIMIT_FLOOR_MS), ceiling);
 }
 
 /**
@@ -22,7 +23,7 @@ export function getQuotaCooldown(backoffLevel = 0) {
  * @param {number} backoffLevel - Current backoff level for exponential backoff
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
-export function checkFallbackError(status, errorText, backoffLevel = 0) {
+export function checkFallbackError(status, errorText, backoffLevel = 0, retryAfterMs = 0) {
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
@@ -31,8 +32,14 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     // Text-based rule: match substring in error message
     if (rule.text && lowerError && lowerError.includes(rule.text)) {
       if (rule.backoff) {
-        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+        const cap = rule.maxLevel || BACKOFF_CONFIG.maxLevel;
+        const newLevel = Math.min(backoffLevel + 1, cap);
+        const ladder = getQuotaCooldown(newLevel);
+        // A provider that tells us when to come back outranks our own ladder.
+        const cooldownMs = retryAfterMs > 0
+          ? Math.min(Math.max(retryAfterMs, RATE_LIMIT_FLOOR_MS), RETRY_AFTER_MAX_MS)
+          : ladder;
+        return { shouldFallback: true, cooldownMs, newBackoffLevel: newLevel };
       }
       return { shouldFallback: true, cooldownMs: rule.cooldownMs };
     }
@@ -40,8 +47,13 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     // Status-based rule: match HTTP status code
     if (rule.status && rule.status === status) {
       if (rule.backoff) {
-        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+        const cap = rule.maxLevel || BACKOFF_CONFIG.maxLevel;
+        const newLevel = Math.min(backoffLevel + 1, cap);
+        const ladder = getQuotaCooldown(newLevel);
+        const cooldownMs = retryAfterMs > 0
+          ? Math.min(Math.max(retryAfterMs, RATE_LIMIT_FLOOR_MS), RETRY_AFTER_MAX_MS)
+          : ladder;
+        return { shouldFallback: true, cooldownMs, newBackoffLevel: newLevel };
       }
       return { shouldFallback: true, cooldownMs: rule.cooldownMs };
     }
