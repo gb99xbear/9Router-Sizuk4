@@ -23,7 +23,9 @@
 
 import crypto from "node:crypto";
 
-export const ZEN_BASE = "https://opencode.ai/zen/v1";
+// Overridable so the adapter can be pointed at the egress rotator
+// (which owns the per-IP daily cap problem) instead of opencode.ai directly.
+export const ZEN_BASE = process.env.OPENCODE_ZEN_BASE || "https://opencode.ai/zen/v1";
 
 /** Models served by /chat/completions and verified reachable. */
 export const CHAT_MODELS = [
