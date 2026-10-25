@@ -335,3 +335,100 @@ function injectKiroSystem(body, prompt) {
     }
   } catch (_) {}
 }
+
+// ---- Chat turns (Prompt Injection "chat" mode) ----
+// Inserts scripted turns as fake history right after any leading system
+// message(s), so the model reads them as a conversation that already
+// happened. If the turn block would end with the same role the real
+// conversation starts with, the two string contents are merged (providers
+// like Anthropic reject consecutive same-role messages). Idempotent.
+// Fail-open: never throws out.
+
+export function injectChatTurns(body, format, turns) {
+  try {
+    if (!body || typeof body !== "object") return;
+    const clean = (Array.isArray(turns) ? turns : []).filter(
+      (t) => t && (t.role === ROLE.USER || t.role === ROLE.ASSISTANT)
+        && typeof t.content === "string" && t.content.trim(),
+    );
+    if (!clean.length) return;
+    if (isKiroBody(body) || format === FORMATS.KIRO) return; // no safe history shape
+
+    if (format === FORMATS.GEMINI || format === FORMATS.GEMINI_CLI
+      || format === FORMATS.VERTEX || format === FORMATS.ANTIGRAVITY) {
+      let target = body;
+      try {
+        if (body.request && typeof body.request === "object" && Array.isArray(body.request.contents)) {
+          target = body.request;
+        }
+      } catch (_) {}
+      if (Array.isArray(target.contents)) { insertTurnsIntoContents(target.contents, clean); return; }
+    }
+    if (Array.isArray(body.messages)) { insertTurnsIntoMessages(body.messages, clean); return; }
+    if (Array.isArray(body.input)) { insertTurnsIntoResponsesInput(body.input, clean); return; }
+  } catch (_) { /* fail-open */ }
+}
+
+function insertTurnsIntoMessages(arr, turns) {
+  let idx = 0;
+  while (idx < arr.length && arr[idx] && (arr[idx].role === ROLE.SYSTEM || arr[idx].role === ROLE.DEVELOPER)) idx++;
+  let already = turns.length <= arr.length - idx;
+  for (let i = 0; already && i < turns.length; i++) {
+    const m = arr[idx + i];
+    if (!m || m.role !== turns[i].role || m.content !== turns[i].content) already = false;
+  }
+  if (already) return;
+  const block = turns.map((t) => ({ role: t.role, content: t.content }));
+  const next = arr[idx];
+  const last = block[block.length - 1];
+  if (next && next.role === last.role && typeof next.content === "string") {
+    last.content = `${last.content}${SEP}${next.content}`;
+    arr.splice(idx, 1);
+  }
+  arr.splice(idx, 0, ...block);
+}
+
+function insertTurnsIntoContents(contents, turns) {
+  const block = turns.map((t) => ({
+    role: t.role === ROLE.ASSISTANT ? "model" : ROLE.USER,
+    parts: [{ text: t.content }],
+  }));
+  let already = block.length <= contents.length;
+  for (let i = 0; already && i < block.length; i++) {
+    const c = contents[i];
+    if (!c || c.role !== block[i].role || !Array.isArray(c.parts)
+      || c.parts.length !== 1 || c.parts[0]?.text !== block[i].parts[0].text) already = false;
+  }
+  if (already) return;
+  const next = contents[0];
+  const last = block[block.length - 1];
+  if (next && next.role === last.role && Array.isArray(next.parts)
+    && next.parts.length === 1 && typeof next.parts[0]?.text === "string") {
+    last.parts = [{ text: `${last.parts[0].text}${SEP}${next.parts[0].text}` }];
+    contents.splice(0, 1);
+  }
+  contents.splice(0, 0, ...block);
+}
+
+function insertTurnsIntoResponsesInput(input, turns) {
+  let idx = 0;
+  while (idx < input.length && input[idx] && input[idx].type === RESPONSES_ITEM.MESSAGE
+    && (input[idx].role === ROLE.SYSTEM || input[idx].role === ROLE.DEVELOPER)) idx++;
+  const block = turns.map((t) => ({
+    type: RESPONSES_ITEM.MESSAGE,
+    role: t.role,
+    content: [{
+      type: t.role === ROLE.ASSISTANT ? RESPONSES_ITEM.OUTPUT_TEXT : RESPONSES_ITEM.INPUT_TEXT,
+      text: t.content,
+    }],
+  }));
+  const next = input[idx];
+  const last = block[block.length - 1];
+  if (next && next.type === RESPONSES_ITEM.MESSAGE && next.role === last.role
+    && Array.isArray(next.content) && next.content.length === 1
+    && typeof next.content[0]?.text === "string") {
+    last.content = [{ type: last.content[0].type, text: `${last.content[0].text}${SEP}${next.content[0].text}` }];
+    input.splice(idx, 1);
+  }
+  input.splice(idx, 0, ...block);
+}

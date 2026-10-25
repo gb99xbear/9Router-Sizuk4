@@ -310,8 +310,19 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @param {string|null} model - The specific model that triggered the error
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
+// Terminal error class: retrying it on another account cannot help.
+const CONTEXT_WINDOW_ERROR =
+  /longer than the model|context window|context length|maximum context|too many tokens|reduce the length/i;
+
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, retryAfterMs = 0) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+
+  // A context-window overflow is a client-shape error: no other account can serve
+  // it, so failover is pointless. Rotating accounts re-uploads the entire
+  // oversized prompt (through the relay) for a request that can never succeed.
+  if (CONTEXT_WINDOW_ERROR.test(String(errorText || ""))) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
   // Request is finished (failed) — hand the key back to the rotation pool.
   releaseConnectionInFlight(connectionId);
   const connections = await getProviderConnections({ provider });

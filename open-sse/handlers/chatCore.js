@@ -23,6 +23,8 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { injectCustomPrompt } from "../rtk/customPrompt.js";
+import { injectChatTurns } from "../rtk/systemInject.js";
+import { resolveModelPromptEntry } from "../rtk/modelPrompt.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
@@ -65,7 +67,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPromptText, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, resolveProxyConfig }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPromptText, customPromptMap, emptyFailoverEnabled, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, resolveProxyConfig }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -291,8 +293,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Sizuk4-My-Queen: inject custom discipline directive (named slot, editable via settings)
   if (customPromptEnabled) {
-    injectCustomPrompt(translatedBody, finalFormat, customPromptText);
-    xf.push("SIZUK4-MY-QUEEN");
+    const entry = resolveModelPromptEntry({
+      provider, model, clientModel: clientRawRequest?.body?.model,
+      map: customPromptMap, globalText: customPromptText,
+    });
+    if (entry.mode === "chat" && Array.isArray(entry.turns) && entry.turns.length) {
+      injectChatTurns(translatedBody, finalFormat, entry.turns);
+      xf.push(`chat turns ${entry.turns.length}`);
+    } else if (entry.text && entry.text.trim()) {
+      injectCustomPrompt(translatedBody, finalFormat, entry.text);
+      xf.push("SIZUK4-MY-QUEEN");
+    }
   }
 
   // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
@@ -582,7 +593,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, emptyFailoverEnabled, pxpipe: pxpipeSummary, reqTag, log };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

@@ -60,6 +60,7 @@ const DEFAULT_SETTINGS = {
   ponytailLevel: "full",
   customPromptEnabled: false,
   customPromptText: "",
+  customPromptMap: {},
   pxpipeEnabled: false,
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
@@ -99,6 +100,43 @@ export async function getSettings() {
   return mergeWithDefaults(raw);
 }
 
+// ---------------------------------------------------------- snapshot cache
+// Hot-path read cache for settings. Every chat request reads settings; on a
+// busy gateway that is one SQLite read per request for data that changes
+// rarely. 3s TTL, and every write invalidates immediately so a dashboard save
+// is visible on the very next request.
+const SETTINGS_SNAPSHOT_TTL_MS = 3000;
+let settingsSnapshot = null;
+
+export function invalidateSettingsCache() {
+  settingsSnapshot = null;
+}
+
+export async function getSettingsCached() {
+  // Fail-open: the cache layer itself must never break a chat. If reading or
+  // storing the snapshot throws, drop any half-written state and fall through
+  // to the uncached path so the caller sees exactly the behavior it had before.
+  try {
+    if (settingsSnapshot && Date.now() - settingsSnapshot.at < SETTINGS_SNAPSHOT_TTL_MS) {
+      return settingsSnapshot.value;
+    }
+  } catch (_) {
+    settingsSnapshot = null;
+  }
+
+  try {
+    const value = await getSettings();
+    settingsSnapshot = { at: Date.now(), value };
+    return value;
+  } catch (err) {
+    // Read failed (DB error). Nothing useful to cache; propagate like the
+    // uncached getSettings() would. Never return a stale snapshot here, or a
+    // DB outage would silently resurrect an old config.
+    settingsSnapshot = null;
+    throw err;
+  }
+}
+
 // Atomic read-merge-write inside transaction (prevents losing concurrent updates)
 export async function updateSettings(updates) {
   const db = await getAdapter();
@@ -112,7 +150,9 @@ export async function updateSettings(updates) {
       [stringifyJson(next)],
     );
   });
-  return mergeWithDefaults(next);
+  const merged = mergeWithDefaults(next);
+  invalidateSettingsCache();
+  return merged;
 }
 
 export async function isCloudEnabled() {

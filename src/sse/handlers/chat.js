@@ -232,6 +232,19 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastError = null;
   let lastStatus = null;
 
+  // Attempt budget. Without a ceiling a failing request walks every account
+  // (330 for TokenHarbor) and re-uploads the entire prompt through the relay on
+  // each hop: measured 39,978 relay calls for 827 successes, ~25 GB of egress in
+  // four days. The cap depends on what the error says about its own scope.
+  const MAX_ACCOUNT_ATTEMPTS = Number(process.env.OC_MAX_ACCOUNT_ATTEMPTS || 10);
+  // A provider-wide throttle is not an account fault: rotating cannot help.
+  const MAX_ATTEMPTS_PROVIDER_BUSY = 1;
+  // An explicit retry window means "come back later", not "another account".
+  const MAX_ATTEMPTS_RETRY_WINDOW = 3;
+  const PROVIDER_BUSY_RE = /under heavy load|server[_ ]busy|overloaded|service busy/i;
+  const RETRY_WINDOW_RE = /at capacity for your account|retry in about|per-minute rate limit/i;
+  let accountAttempts = 0;
+
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
@@ -288,6 +301,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       ponytailLevel: chatSettings.ponytailLevel || "full",
       customPromptEnabled: !!chatSettings.customPromptEnabled,
       customPromptText: chatSettings.customPromptText || "",
+      customPromptMap: chatSettings.customPromptMap || {},
+      emptyFailoverEnabled: !!chatSettings.emptyFailoverEnabled,
       pxpipeEnabled: !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
@@ -349,7 +364,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         // Streamed response: hand the key back when the body closes.
         const originalBody = resp.body;
         try {
-          const reader = originalBody.getReader ? originalBody : null;
+          const reader = typeof originalBody.getReader === "function" ? originalBody.getReader() : null;
           if (reader) {
             const wrapped = new ReadableStream({
               start(controller) {
@@ -405,10 +420,28 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       : (await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, resetsAtMs)).shouldFallback;
 
     if (shouldFallback) {
-      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
-      excludeConnectionIds.add(credentials.connectionId);
+      accountAttempts += 1;
       lastError = result.error;
       lastStatus = result.status;
+
+      const errText = String(result.error || "");
+      const cap = PROVIDER_BUSY_RE.test(errText)
+        ? MAX_ATTEMPTS_PROVIDER_BUSY
+        : RETRY_WINDOW_RE.test(errText)
+          ? MAX_ATTEMPTS_RETRY_WINDOW
+          : MAX_ACCOUNT_ATTEMPTS;
+
+      if (accountAttempts >= cap) {
+        const why = cap === MAX_ACCOUNT_ATTEMPTS ? "attempt budget" : "provider-side throttle";
+        log.warn("FALLBACK", `⇄ STOP after ${accountAttempts} account(s) for [${provider}/${model}] (${result.status}) — ${why}; not rotating further`);
+        return errorResponse(
+          lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE,
+          lastError || "Provider unavailable",
+        );
+      }
+
+      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
+      excludeConnectionIds.add(credentials.connectionId);
       continue;
     }
 
