@@ -156,6 +156,9 @@ async function hasValidApiKey(request) {
 async function canAccessPublicLlmApi(request) {
   if (isLocalRequest(request)) return true;
   if (await hasValidCliToken(request)) return true;
+  // Jika pengguna sudah login ke dashboard (ada cookie sesi/JWT sah atau requireLogin=false),
+  // benarkan akses terus ke LLM API tanpa paksa masukkan API key!
+  if (await isAuthenticated(request)) return true;
   return await hasValidApiKey(request);
 }
 

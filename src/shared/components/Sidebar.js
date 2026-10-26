@@ -26,6 +26,7 @@ const navItems = [
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
   { href: "/dashboard/injection", label: "Injection", icon: "bolt" },
+  { href: "/dashboard/playground", label: "Playground", icon: "science" },
   { href: "/dashboard/proxy-fitness", label: "Proxy Fitness", icon: "network_check" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
