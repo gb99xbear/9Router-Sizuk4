@@ -22,10 +22,19 @@ export default function PlaygroundClient() {
   const [showPayload, setShowPayload] = useState(true);
 
   useEffect(() => {
-    fetch("/api/models")
+    fetch("/api/models?activeOnly=true", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { models: [] }))
       .then((d) => {
-        const list = Array.isArray(d) ? d : d.models || d.data || [];
+        const rawList = Array.isArray(d) ? d : d.models || d.data || [];
+        const seen = new Set();
+        const list = [];
+        for (const m of rawList) {
+          const id = m.fullModel || m.model || m.id;
+          if (id && !seen.has(id)) {
+            seen.add(id);
+            list.push({ id });
+          }
+        }
         setModels(list);
         if (list.length > 0 && !testModel) {
           const gem = list.find((m) => m.id?.includes("gemini-3.8-flash")) || list[0];
