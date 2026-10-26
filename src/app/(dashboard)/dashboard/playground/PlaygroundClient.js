@@ -22,26 +22,61 @@ export default function PlaygroundClient() {
   const [showPayload, setShowPayload] = useState(true);
 
   useEffect(() => {
-    fetch("/api/models?activeOnly=true", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { models: [] }))
-      .then((d) => {
-        const rawList = Array.isArray(d) ? d : d.models || d.data || [];
+    (async () => {
+      try {
+        const [mres, nres] = await Promise.all([
+          fetch("/api/models?activeOnly=true", { cache: "no-store" }),
+          fetch("/api/provider-nodes", { cache: "no-store" }),
+        ]);
+        const mdata = await mres.json();
+        const ndata = await nres.json();
+
+        const nodeInfo = {};
+        for (const n of (Array.isArray(ndata?.nodes) ? ndata.nodes : [])) {
+          if (n?.id) nodeInfo[n.id] = { name: n.name, prefix: n.prefix };
+        }
+
+        const rawList = Array.isArray(mdata?.models) ? mdata.models : [];
         const seen = new Set();
         const list = [];
+
         for (const m of rawList) {
-          const id = m.fullModel || m.model || m.id;
-          if (id && !seen.has(id)) {
-            seen.add(id);
-            list.push({ id });
+          const full = m.fullModel || m.model || m.id;
+          if (!full) continue;
+          
+          const parts = full.split("/");
+          const info = nodeInfo[m.provider] || {};
+          let prefix = info.prefix || (parts.length > 1 ? parts[0] : (m.provider || "model"));
+          let modelName = parts.length > 1 ? parts.slice(1).join("/") : full;
+          
+          // Bersihkan prefix jika ada nama provider panjang
+          if (prefix.startsWith("openai-compatible-chat-") && prefix.endsWith("-node")) {
+            prefix = prefix.replace("openai-compatible-chat-", "").replace("-node", "");
           }
+          
+          const formattedId = `${prefix}/${modelName}`;
+          if (seen.has(formattedId)) continue;
+          seen.add(formattedId);
+
+          list.push({
+            id: formattedId,
+            display: `${prefix}/${modelName}`,
+            provider: info.name || prefix,
+          });
         }
+
+        // Susun mengikut abjad prefix kemudian nama model
+        list.sort((a, b) => a.display.localeCompare(b.display));
+
         setModels(list);
         if (list.length > 0 && !testModel) {
-          const gem = list.find((m) => m.id?.includes("gemini-3.8-flash")) || list[0];
+          const gem = list.find((m) => m.id.includes("gemini-3.8-flash") || m.id.startsWith("ag/")) || list[0];
           setTestModel(gem.id);
         }
-      })
-      .catch(() => {});
+      } catch (err) {
+        console.error("Gagal memuatkan senarai model:", err);
+      }
+    })();
 
     try {
       const k = localStorage.getItem("9r_tester_api_key") || "";
@@ -153,7 +188,7 @@ export default function PlaygroundClient() {
               >
                 <option value="">- pilih model -</option>
                 {models.map((m) => (
-                  <option key={m.id} value={m.id}>{m.id}</option>
+                  <option key={m.id} value={m.id}>{m.display || m.id}</option>
                 ))}
               </select>
             </label>
