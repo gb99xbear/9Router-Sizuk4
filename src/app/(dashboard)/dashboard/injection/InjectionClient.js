@@ -20,6 +20,9 @@ const SIZUK4_MY_QUEEN_DEFAULT = [
 
 export default function InjectionClient() {
   const [enabled, setEnabled] = useState(false);
+  const [zeroRefusalEnabled, setZeroRefusalEnabled] = useState(false);
+  const [zeroRefusalTargetModels, setZeroRefusalTargetModels] = useState([]);
+  const [zeroRefusalMaxReframes, setZeroRefusalMaxReframes] = useState(4);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState("");
@@ -489,6 +492,77 @@ export default function InjectionClient() {
             ))}
           </div>
         )}
+      </Card>
+
+      <Card
+        title="Targeted Zero-Refusal Engine"
+        subtitle="Memotong pembuka penafian (disclaimer strip) dan menjalankan Fresh Reframing tanpa sejarah penolakan bagi model yang disasarkan."
+        icon="shield"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-text-main">Status Engine</p>
+              <p className="text-xs text-text-muted">Aktifkan pemotongan penafian dan auto-reframing</p>
+            </div>
+            <Toggle
+              checked={zeroRefusalEnabled}
+              onChange={async (v) => {
+                setZeroRefusalEnabled(v);
+                await save({ zeroRefusalEnabled: v });
+              }}
+            />
+          </div>
+
+          {zeroRefusalEnabled && (
+            <div className="space-y-3 pt-3 border-t border-border/40">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">Model Sasaran (Targeted Models)</p>
+                  <p className="text-xs text-text-muted">Hanya model yang disenaraikan akan melalui pemotongan penafian & reframing</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted">Maksimum Reframe:</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={zeroRefusalMaxReframes}
+                    onChange={async (e) => {
+                      const val = Number(e.target.value) || 4;
+                      setZeroRefusalMaxReframes(val);
+                      await save({ zeroRefusalMaxReframes: val });
+                    }}
+                    className="w-16 px-2 py-1 text-xs border border-border rounded-md bg-surface text-center font-mono focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+                {models.map((m) => {
+                  const isChecked = zeroRefusalTargetModels.includes(m.id);
+                  return (
+                    <label key={m.id} className="flex items-center gap-2 p-2 rounded-lg border border-border/50 bg-surface hover:bg-surface-2 cursor-pointer transition-colors text-xs">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={async (e) => {
+                          let next;
+                          if (e.target.checked) next = [...zeroRefusalTargetModels, m.id];
+                          else next = zeroRefusalTargetModels.filter(id => id !== m.id);
+                          setZeroRefusalTargetModels(next);
+                          await save({ zeroRefusalTargetModels: next });
+                        }}
+                        className="rounded border-border text-primary focus:ring-primary/20"
+                      />
+                      <span className="font-mono truncate" title={m.id}>{m.id}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </Card>
 
       <Card

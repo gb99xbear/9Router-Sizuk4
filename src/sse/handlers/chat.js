@@ -306,6 +306,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       pxpipeEnabled: !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
+      zeroRefusalSettings: chatSettings,
       // Lazily warms the in-process module on first use; null when not installed (fail-open)
       pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,

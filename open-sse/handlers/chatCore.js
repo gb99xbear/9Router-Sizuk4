@@ -34,6 +34,8 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { markPoolUnfit, clearPoolUnfit } from "../services/proxyPoolFitness.js";
+import { isRefusal, stripRefusal, getReframingQueries } from "../services/refusalEngine.js";
+import { shouldApplyZeroRefusal } from "../services/refusalEngineSettings.js";
 
 // Pool-scoped failure retry: when an executor tags an error as belonging to a
 // proxy pool (region gate, dead proxy, …), re-resolve the proxy config
@@ -56,6 +58,69 @@ const MAX_POOL_RETRIES = 2;
  * assistant-message field and answer every turn with a literal "400" body
  * (observed with multi-turn Codex sessions via OpenAI-compatible nodes).
  */
+function extractUserQuery(body) {
+  if (!body || typeof body !== "object") return "";
+  const messages = body.messages;
+  if (Array.isArray(messages)) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg && msg.role === "user") {
+        if (typeof msg.content === "string") return msg.content;
+        if (Array.isArray(msg.content)) {
+          for (const part of msg.content) {
+            if (part && part.type === "text" && typeof part.text === "string") return part.text;
+          }
+        }
+      }
+    }
+  }
+  return "";
+}
+
+function extractTextFromResponse(data) {
+  if (!data || typeof data !== "object") return "";
+  if (Array.isArray(data.choices) && data.choices[0]) {
+    const msg = data.choices[0].message || data.choices[0].delta;
+    if (typeof msg?.content === "string") return msg.content;
+    if (Array.isArray(msg?.content)) {
+      return msg.content.map(c => (typeof c === "string" ? c : c?.text || "")).join("");
+    }
+  }
+  if (typeof data.content === "string") return data.content;
+  if (Array.isArray(data.content)) {
+    for (const block of data.content) {
+      if (block?.type === "text" && typeof block.text === "string") return block.text;
+    }
+  }
+  return "";
+}
+
+function replaceResponseText(data, newText) {
+  if (!data || typeof data !== "object") return data;
+  if (Array.isArray(data.choices) && data.choices[0]) {
+    const choice = data.choices[0];
+    if (choice.message) {
+      choice.message.content = newText;
+    } else if (choice.delta) {
+      choice.delta.content = newText;
+    }
+    return data;
+  }
+  if (typeof data.content === "string") {
+    data.content = newText;
+    return data;
+  }
+  if (Array.isArray(data.content)) {
+    for (const block of data.content) {
+      if (block?.type === "text") {
+        block.text = newText;
+        return data;
+      }
+    }
+  }
+  return data;
+}
+
 export function stripContinuityFields(body) {
   if (!body || !Array.isArray(body.messages)) return body;
   for (const msg of body.messages) {
@@ -67,7 +132,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPromptText, customPromptMap, emptyFailoverEnabled, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, resolveProxyConfig }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPromptText, customPromptMap, emptyFailoverEnabled, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, resolveProxyConfig, zeroRefusalSettings }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -605,6 +670,155 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // True non-streaming response
   if (!stream) {
+    const targetSettings = zeroRefusalSettings || (await import("@/lib/db/repos/settingsRepo.js").then(m => m.getSettingsCached?.() || m.getSettings?.()).catch(() => ({})));
+    const zeroRefusalActive = shouldApplyZeroRefusal(model, targetSettings);
+
+    if (zeroRefusalActive) {
+      // Buffer and inspect non-streaming response
+      const clonedResp = providerResponse.clone();
+      let rawText = "";
+      let parsedJson = null;
+      const isSSE = (providerResponse.headers.get("content-type") || "").includes("text/event-stream");
+
+      try {
+        if (isSSE) {
+          const sseText = await clonedResp.text();
+          const { parseSSEToOpenAIResponse } = await import("./chatCore/sseToJsonHandler.js");
+          parsedJson = parseSSEToOpenAIResponse(sseText, model);
+          rawText = extractTextFromResponse(parsedJson);
+        } else {
+          parsedJson = await clonedResp.json();
+          rawText = extractTextFromResponse(parsedJson);
+        }
+      } catch (e) {
+        log?.warn?.("ZERO_REFUSAL", `Failed to inspect non-streaming response: ${e.message}`);
+      }
+
+      if (rawText && isRefusal(rawText)) {
+        log?.warn?.("ZERO_REFUSAL", `Refusal detected for model ${model}. Attempting stripRefusal...`);
+        const stripped = stripRefusal(rawText);
+
+        if (stripped && stripped !== rawText && stripped.length > 150) {
+          log?.info?.("ZERO_REFUSAL", `Substantial technical content found (${stripped.length} chars). Stripping refusal prefix.`);
+          replaceResponseText(parsedJson, stripped);
+          const patchedResponse = new Response(JSON.stringify(parsedJson), {
+            status: providerResponse.status,
+            statusText: providerResponse.statusText,
+            headers: {
+              ...Object.fromEntries(providerResponse.headers.entries()),
+              "content-type": "application/json"
+            }
+          });
+          const result = await handleNonStreamingResponse({
+            ...sharedCtx,
+            providerResponse: patchedResponse,
+            sourceFormat,
+            targetFormat: providerResponseFormat,
+            reqLogger,
+            toolNameMap,
+            customToolNames,
+            trackDone,
+            appendLog
+          });
+          streamController.handleComplete();
+          return result;
+        }
+
+        // Hard refusal: launch Fresh Reframing loop
+        const userQuery = extractUserQuery(body);
+        const reframingQueries = getReframingQueries(userQuery);
+        const maxReframes = typeof targetSettings?.zeroRefusalMaxReframes === "number" ? targetSettings.zeroRefusalMaxReframes : 4;
+        log?.warn?.("ZERO_REFUSAL", `Hard refusal identified. Starting fresh reframing (max: ${maxReframes})...`);
+
+        let lastResult = null;
+
+        for (let attempt = 0; attempt < Math.min(maxReframes, reframingQueries.length); attempt++) {
+          const queryVariation = reframingQueries[attempt];
+          log?.info?.("ZERO_REFUSAL", `Reframing attempt ${attempt + 1}/${maxReframes}: "${queryVariation.slice(0, 80)}..."`);
+
+          // Clone messages without previous assistant messages (avoid negative history bias)
+          const baseMessages = Array.isArray(body?.messages) ? body.messages : [];
+          const cleanMessages = baseMessages.filter(m => m && m.role !== "assistant");
+          let replaced = false;
+          const updatedMessages = cleanMessages.map(m => {
+            if (!replaced && m && m.role === "user") {
+              replaced = true;
+              return { ...m, content: queryVariation };
+            }
+            return m;
+          });
+          if (!replaced) {
+            updatedMessages.push({ role: "user", content: queryVariation });
+          }
+
+          const reframedBody = {
+            ...body,
+            messages: updatedMessages,
+            temperature: 0.9,
+          };
+
+          try {
+            const reframeResult = await handleChatCore({
+              body: reframedBody,
+              modelInfo,
+              credentials,
+              log,
+              onCredentialsRefreshed,
+              onRequestSuccess,
+              onDisconnect,
+              clientRawRequest,
+              connectionId,
+              userAgent,
+              apiKey,
+              ccFilterNaming,
+              rtkEnabled,
+              headroomEnabled,
+              headroomUrl,
+              headroomCompressUserMessages,
+              headroomTimeoutMs,
+              cavemanEnabled,
+              cavemanLevel,
+              ponytailEnabled,
+              ponytailLevel,
+              customPromptEnabled,
+              customPromptText,
+              customPromptMap,
+              emptyFailoverEnabled,
+              pxpipeEnabled,
+              pxpipeMinChars,
+              pxpipeTimeoutMs,
+              pxpipeTransform,
+              onPxpipeEvent,
+              sourceFormatOverride,
+              providerThinking,
+              resolveProxyConfig,
+              zeroRefusalSettings: { ...targetSettings, zeroRefusalMaxReframes: 0 },
+            });
+
+            if (reframeResult?.success && reframeResult?.response) {
+              const respClone = reframeResult.response.clone();
+              const reframeJson = await respClone.json();
+              const reframeText = extractTextFromResponse(reframeJson);
+
+              if (reframeText && !isRefusal(reframeText)) {
+                log?.info?.("ZERO_REFUSAL", `Reframing attempt ${attempt + 1} succeeded without refusal.`);
+                streamController.handleComplete();
+                return reframeResult;
+              }
+              lastResult = reframeResult;
+            }
+          } catch (reframeErr) {
+            log?.warn?.("ZERO_REFUSAL", `Reframing attempt ${attempt + 1} threw: ${reframeErr.message}`);
+          }
+        }
+
+        if (lastResult) {
+          streamController.handleComplete();
+          return lastResult;
+        }
+      }
+    }
+
     const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap, customToolNames, trackDone, appendLog });
     streamController.handleComplete();
     return result;

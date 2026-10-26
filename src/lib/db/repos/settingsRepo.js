@@ -68,6 +68,15 @@ const DEFAULT_SETTINGS = {
   catalogWhitelistEnabled: false,
   catalogWhitelist: [],
   providerCatalogs: {},
+  zeroRefusalEnabled: false,
+  zeroRefusalTargetModels: [
+    "glm-5.3",
+    "glm-5.3-flash",
+    "deepseek-v4.1-flash",
+    "mimo-v2.6-flash",
+    "kimi-k3",
+  ],
+  zeroRefusalMaxReframes: 4,
 };
 
 async function readRaw() {
