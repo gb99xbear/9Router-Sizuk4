@@ -232,11 +232,20 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         if (pDiff !== 0) return pDiff;
         return String(a.id || '').localeCompare(String(b.id || ''));
       });
-      // Skip keys already reserved by another live request. If EVERY key is
-      // in flight we still fall through to the raw pointer (better a possible
-      // collision than a hard failure — upstream will 429 and we rotate).
-      const free = sorted.filter((c) => !isConnectionInFlight(c.id));
-      const pool = free.length > 0 ? free : sorted;
+
+      // Cluster Pool Khas TokenHarbor Sahaja:
+      // Provider lain (termasuk Antigravity) WAJIB guna semua sorted akaun tanpa slice/limit!
+      let poolCandidates = sorted;
+      if (providerId.includes("tokenharbor")) {
+        const stickyLimit = Number(providerOverride.stickyRoundRobinLimit) || 5;
+        if (stickyLimit > 0 && sorted.length > stickyLimit) {
+          poolCandidates = sorted.slice(0, stickyLimit);
+        }
+      }
+
+      // Skip keys already reserved by another live request.
+      const free = poolCandidates.filter((c) => !isConnectionInFlight(c.id));
+      const pool = free.length > 0 ? free : poolCandidates;
 
       if (pool.length > 0) {
         const rkey = providerId + "::" + (model || "*");

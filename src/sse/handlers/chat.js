@@ -236,11 +236,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // (330 for TokenHarbor) and re-uploads the entire prompt through the relay on
   // each hop: measured 39,978 relay calls for 827 successes, ~25 GB of egress in
   // four days. The cap depends on what the error says about its own scope.
-  const MAX_ACCOUNT_ATTEMPTS = Number(process.env.OC_MAX_ACCOUNT_ATTEMPTS || 10);
+  const MAX_ACCOUNT_ATTEMPTS = Number(process.env.OC_MAX_ACCOUNT_ATTEMPTS || 20);
   // A provider-wide throttle is not an account fault: rotating cannot help.
-  const MAX_ATTEMPTS_PROVIDER_BUSY = 1;
+  const MAX_ATTEMPTS_PROVIDER_BUSY = 10;
   // An explicit retry window means "come back later", not "another account".
-  const MAX_ATTEMPTS_RETRY_WINDOW = 3;
+  const MAX_ATTEMPTS_RETRY_WINDOW = 15;
   const PROVIDER_BUSY_RE = /under heavy load|server[_ ]busy|overloaded|service busy/i;
   const RETRY_WINDOW_RE = /at capacity for your account|retry in about|per-minute rate limit/i;
   let accountAttempts = 0;
