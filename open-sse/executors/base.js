@@ -139,6 +139,10 @@ export class BaseExecutor {
 
       try {
         const bodyStr = JSON.stringify(transformedBody);
+                if (url.includes('kiro')) {
+          console.log('[KIRO-FETCH-URL]', url);
+          console.log('[KIRO-FETCH-HEADERS]', JSON.stringify(headers));
+        }
         const response = await proxyAwareFetch(url, {
           method: "POST",
           headers,

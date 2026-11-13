@@ -35,7 +35,13 @@ function cleanProviderCatalogs(value) {
     if (typeof catalog.enabled !== "boolean") return null;
     const modelIds = cleanModelIds(catalog.modelIds);
     if (!modelIds) return null;
-    result[providerId] = { enabled: catalog.enabled, modelIds };
+    // Preserve optional per-model overrides (contextWindow/maxOutput) so a
+    // manually-set context length survives dashboard saves instead of being
+    // stripped and falling back to the upstream-reported window.
+    const entry = { enabled: catalog.enabled, modelIds };
+    if (Number.isFinite(catalog.contextLength)) entry.contextLength = catalog.contextLength;
+    if (Number.isFinite(catalog.maxOutput)) entry.maxOutput = catalog.maxOutput;
+    result[providerId] = entry;
   }
   return result;
 }

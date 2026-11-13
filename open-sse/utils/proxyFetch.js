@@ -1,6 +1,7 @@
 import { Readable } from "stream";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
+import { addRelayBytes } from "@/lib/db/repos/relayByteRepo.js";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
@@ -303,7 +304,64 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       "x-relay-target": `${parsed.protocol}//${parsed.host}`,
       "x-relay-path": `${parsed.pathname}${parsed.search}`,
     };
-    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+    const relayResp = await originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+
+    // Meter the bytes this hop sent to / received from the relay. Vercel's
+    // billing API lags ~7 days, so this counter is the only live Fast Origin
+    // Transfer source. Fire-and-forget: never block or fail the request.
+    //
+    // outBytes: content-length only exists on buffered replies. Streaming
+    // responses (SSE: AG, TokenHarbor) have none, so counting the header left
+    // every streamed reply at 0. Tee the body and count the real bytes instead.
+    const meterRelay = (outBytes) => {
+      try {
+        const body = options.body;
+        let inBytes = 0;
+        if (typeof body === "string") inBytes = Buffer.byteLength(body);
+        else if (body && typeof body.byteLength === "number") inBytes = body.byteLength;
+        else if (body && typeof body.length === "number") inBytes = body.length;
+        const relayHost = (() => { try { return new URL(vercelRelayUrl).host; } catch { return null; } })();
+        addRelayBytes({
+          day: new Date().toISOString().slice(0, 10),
+          relayHost,
+          targetHost: parsed.host,
+          inBytes,
+          outBytes,
+        }).catch(() => {});
+      } catch {
+        /* metering must never break a request */
+      }
+    };
+
+    const meterRelaySync = (() => {
+      try {
+        const cl = relayResp.headers.get("content-length");
+        return cl ? Number(cl) || 0 : 0;
+      } catch { return 0; }
+    })();
+
+    if (meterRelaySync > 0 || !relayResp.body) {
+      meterRelay(meterRelaySync);
+      return relayResp;
+    }
+
+    // Streamed reply: count as it flows, report once the stream closes.
+    let streamed = 0;
+    const meteredRelayBody = relayResp.body.pipeThrough(new TransformStream({
+      transform(chunk, controller) {
+        streamed += chunk?.byteLength || chunk?.length || 0;
+        controller.enqueue(chunk);
+      },
+      flush() {
+        meterRelay(streamed);
+      },
+    }));
+
+    return new Response(meteredRelayBody, {
+      status: relayResp.status,
+      statusText: relayResp.statusText,
+      headers: relayResp.headers,
+    });
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);

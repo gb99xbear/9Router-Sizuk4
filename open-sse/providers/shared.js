@@ -75,12 +75,18 @@ export const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
 export const OPENAI_COMPAT_BASE = "https://api.openai.com/v1";
 export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 
-// Official Antigravity IDE Desktop 2.11.0 fingerprint captured from macOS arm64.
-// Keep this static even when 9router runs on Linux: the provider profile is
-// intentionally matching the IDE client, not the server host.
-export const ANTIGRAVITY_IDE_VERSION = "2.11.0";
+// Real Antigravity CLI fingerprint, captured 2026-11-12 by MITM-ing the actual
+// `agy` 1.5.6 binary on this host (see the antigravity-account-farming skill,
+// references/direct-api-fingerprint.md).
+//
+// Do NOT go back to the old `antigravity/ide/<ver> darwin/arm64` string: it
+// claimed a macOS IDE while every request left a Linux host, and that client
+// mismatch is what got accounts flagged in the first place. The live CLI sends
+// one identity - client, os_type and arch all consistent:
+export const ANTIGRAVITY_IDE_VERSION = "1.5.6";
 export const ANTIGRAVITY_IDE_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
-export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
+export const ANTIGRAVITY_IDE_USER_AGENT =
+  "antigravity/cli/1.5.6 (aidev_client; os_type=linux; arch=arm64; cl=1018951551; auth_method=consumer)";
 
 // Antigravity OAuth client credentials (public CLI client — duplicated in usage.js + src/lib/oauth)
 export const ANTIGRAVITY_OAUTH_CLIENT = {

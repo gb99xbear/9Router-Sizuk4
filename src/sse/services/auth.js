@@ -323,8 +323,33 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 const CONTEXT_WINDOW_ERROR =
   /longer than the model|context window|context length|maximum context|too many tokens|reduce the length/i;
 
+// THK IP-block 403: a per-EGRESS block ("Requests from this network address
+// ... are not accepted"), not a per-key problem. Locking the key cannot help -
+// the next key from the same egress 403s identically. Scoped to the
+// tokenharbor provider only: skip silently (no model lock) so failover keeps
+// hunting for a key on a different egress, and the key stays pickable.
+const THK_IP_BLOCK_403 = /network address|shared host|proxy or a cloudflare worker/i;
+
+// Account/network-level throttle: the provider is slowing down THIS ACCOUNT,
+// not one model. Locking a single model with it leaves the key pickable for
+// every other model, so it gets re-throttled seconds later. These error texts
+// must lock the account (modelLock___all) instead.
+const ACCOUNT_LEVEL_THROTTLE =
+  /under heavy load|server_busy|network rate limit|being slowed down|for this minute|content-policy grounds|shared allowance|free allowance/i;
+
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, retryAfterMs = 0) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+
+  if (
+    status === 403 &&
+    provider &&
+    String(provider).includes("tokenharbor") &&
+    THK_IP_BLOCK_403.test(String(errorText || ""))
+  ) {
+    log.warn("AUTH", `THK IP-block 403 (per-egress, bukan per-key) - skip tanpa lock: ${connectionId.slice(0, 8)}`);
+    releaseConnectionInFlight(connectionId);
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
 
   // A context-window overflow is a client-shape error: no other account can serve
   // it, so failover is pointless. Rotating accounts re-uploads the entire
@@ -367,7 +392,9 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 1000) : "Provider error";
-  const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
+  const accountLevel = githubResetAtMs
+    || ACCOUNT_LEVEL_THROTTLE.test(String(errorText || ""));
+  const lockUpdate = buildModelLockUpdate(accountLevel ? null : model, cooldownMs);
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,

@@ -501,6 +501,17 @@ async function buildModelsListUncached(kindFilter, options = {}) {
             if (!Number.isFinite(contextWindow)) contextWindow = fallback.contextWindow;
             if (!Number.isFinite(maxOutput)) maxOutput = fallback.maxOutput;
           }
+          // Manual per-provider override (set via dashboard providerCatalogs).
+          // Wins over upstream/static values so an operator can raise a
+          // too-conservative window (e.g. SenseNova flash reported 200k but
+          // accepts ~1M tokens).
+          const catalogOverride = providerCatalogs[providerId];
+          if (catalogOverride && Number.isFinite(catalogOverride.contextLength)) {
+            contextWindow = catalogOverride.contextLength;
+          }
+          if (catalogOverride && Number.isFinite(catalogOverride.maxOutput)) {
+            maxOutput = catalogOverride.maxOutput;
+          }
           if (Number.isFinite(contextWindow)) model.context_length = contextWindow;
           if (Number.isFinite(maxOutput)) model.max_completion_tokens = maxOutput;
         }

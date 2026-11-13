@@ -160,6 +160,12 @@ export const USAGE_SUPPORTED_PROVIDERS = REGISTRY
   .filter(r => r.features?.usage)
   .map(r => r.id);
 
-export const USAGE_APIKEY_PROVIDERS = REGISTRY
-  .filter(r => r.features?.usageApikey)
-  .map(r => r.id);
+export const USAGE_APIKEY_PROVIDERS = [
+  ...REGISTRY.filter(r => r.features?.usageApikey).map(r => r.id),
+  // Antigravity quota is served by our local ag-adapter (which holds the real
+  // CLI fingerprint and the account pool) instead of 9Router calling Google
+  // itself - one identity, no duplicate polling. See open-sse/services/usage.js.
+  // NOTE: the id must stay "antigravity" - the dashboard picks its quota parser
+  // by provider name, and an unknown id renders an empty card.
+  "antigravity",
+];

@@ -78,6 +78,25 @@ export const ERROR_RULES = [
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
+  // --- TokenHarbor windows (read from its own 429 bodies) ---
+  // Must come BEFORE the generic "rate limit" rule: text rules match
+  // top-to-bottom and "hourly rate limit" contains "rate limit". Without these
+  // an "hourly" key unlocked after the 30s floor and was re-picked, resending
+  // the whole request each round.
+  { text: "hourly rate limit",        cooldownMs: 55 * 60 * 1000 },
+  { text: "per-minute rate limit",    cooldownMs: 60 * 1000 },
+  // "You've used this period's free allowance ... rolling 7-day period starts
+  // on <date>": dead until the reset. The quota watcher also flips isActive=0;
+  // this stops the router retrying in the meantime.
+  { text: "free allowance",           cooldownMs: 12 * 60 * 60 * 1000 },
+  // "shared allowance ... is used up for this minute. Please retry in about
+  // 30 seconds." MUST sit above the 30-minute content-policy rules: those
+  // rules also match this body (it mentions "content-policy grounds"), and
+  // parking a per-minute throttle for half an hour throws away a healthy key.
+  { text: "for this minute",          cooldownMs: 90 * 1000 },
+  { text: "content-policy grounds",   cooldownMs: 30 * 60 * 1000 },
+  { text: "shared allowance",         cooldownMs: 30 * 60 * 1000 },
+
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
@@ -85,8 +104,12 @@ export const ERROR_RULES = [
   { text: "overloaded",               backoff: true },
   // TokenHarbor-style capacity throttling: it clears in ~60s, so treat it
   // as a short, capped backoff instead of the full 429 ladder.
-  { text: "under heavy load",         backoff: true, maxLevel: 3 },
-  { text: "server_busy",              backoff: true, maxLevel: 3 },
+  // "under heavy load" / server_busy: the ACCOUNT is throttled "for a few
+  // minutes". backoff:true only escalates the level, it does not lengthen the
+  // wait (measured: still 30s after 5 hits), so the key came back before the
+  // window ended. Fixed 5-minute cooldown instead.
+  { text: "under heavy load",         cooldownMs: 5 * 60 * 1000 },
+  { text: "server_busy",              cooldownMs: 5 * 60 * 1000 },
   { text: "server busy",              backoff: true, maxLevel: 3 },
 
   // --- Status-based rules (fallback when text doesn't match) ---

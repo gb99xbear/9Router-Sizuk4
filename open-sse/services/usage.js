@@ -35,7 +35,25 @@ import {
 const USAGE_HANDLERS = {
   github: (c) => getGitHubUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   "gemini-cli": (c) => getGeminiUsage(c.accessToken, c.providerDataWithProjectId, c.proxyOptions),
-  antigravity: (c) => getAntigravityUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  antigravity: async (c) => {
+    // Quota comes from the local ag-adapter (it holds the real CLI fingerprint
+    // and the account pool), so 9Router never opens a second identity against
+    // Google for Antigravity quota. The provider id stays "antigravity" so the
+    // dashboard's existing antigravity quota parser renders the card.
+    const email = c.providerSpecificData?.email;
+    const base = c.providerSpecificData?.adapterUrl || "http://127.0.0.1:8792";
+    const url = `${base}/v1/quota${email ? `?email=${encodeURIComponent(email)}` : ""}`;
+    try {
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${c.apiKey || ""}` },
+        cache: "no-store",
+      });
+      if (!res.ok) return { message: `ag-adapter quota HTTP ${res.status}` };
+      return await res.json();
+    } catch (e) {
+      return { message: `ag-adapter unreachable: ${e.message}` };
+    }
+  },
   claude: (c) => getClaudeUsage(c.accessToken, c.proxyOptions, { force: c.force }),
   codex: (c) => getCodexUsage(c.accessToken, c.proxyOptions),
   kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),

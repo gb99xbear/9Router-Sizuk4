@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Card, Button, Toggle, Input } from "@/shared/components";
 
 const SIZUK4_MY_QUEEN_DEFAULT = [
@@ -46,6 +46,55 @@ export default function InjectionClient() {
   const [testErr, setTestErr] = useState("");
   const [testOut, setTestOut] = useState(null);
   const [showPayload, setShowPayload] = useState(false);
+
+  // --- Fail muat naik (.md / .txt) -----------------------------------------
+  // Add-on capability: read a prompt file in the browser and drop it into the
+  // textarea that already exists. Nothing is saved until Bear presses Save.
+  const MAX_UPLOAD_BYTES = 100 * 1024; // 100 KB guard rail
+  const globalFileRef = useRef(null);
+  const modelFileRef = useRef(null);
+  const modelFileTarget = useRef(null);
+  const [uploadMsg, setUploadMsg] = useState("");
+
+  const readPromptFile = async (file) => {
+    if (!file) return null;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(
+        `Fail terlalu besar (${(file.size / 1024).toFixed(0)} KB). Had ${MAX_UPLOAD_BYTES / 1024} KB.`
+      );
+      return null;
+    }
+    try {
+      return await file.text();
+    } catch (e) {
+      setError("Gagal baca fail: " + e.message);
+      return null;
+    }
+  };
+
+  const onPickGlobalFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    const text = await readPromptFile(file);
+    if (text === null) return;
+    setDraft(text);
+    setUseDefault(false);
+    setError("");
+    setUploadMsg(`Dimuat: ${file.name} (${text.length.toLocaleString()} aksara)`);
+  };
+
+  const onPickModelFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    const id = modelFileTarget.current;
+    if (!id) return;
+    const text = await readPromptFile(file);
+    if (text === null) return;
+    const next = { ...mapDraft, [id]: text };
+    setMapDraft(next);
+    setError("");
+    setUploadMsg(`Dimuat untuk ${id}: ${file.name} (${text.length.toLocaleString()} aksara)`);
+  };
 
   useEffect(() => {
     if (!testModel && models.length) setTestModel(models[0].id);
@@ -245,9 +294,9 @@ export default function InjectionClient() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Injection</h1>
+          <h1 className="text-2xl font-bold">Alfred God Mode Setting</h1>
           <p className="text-sm text-text-muted">
-            Sizuk4-My-Queen: arahan system yang disuntik ke setiap request
+            Alfred God Mode Setting: arahan system ketaatan penuh yang disuntik ke setiap request
           </p>
         </div>
         <Toggle checked={enabled} onChange={(v) => { setEnabled(v); save({ customPromptEnabled: v }); }} />
@@ -258,6 +307,164 @@ export default function InjectionClient() {
           {error}
         </div>
       )}
+
+            <Card
+        title="Tester / Playground"
+        subtitle="Test system prompt atau chat script terus melalui pipeline sebenar - server yang buat injection."
+        icon="science"
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1 text-xs text-text-muted">
+              Model
+              <select
+                value={testModel}
+                onChange={(e) => setTestModel(e.target.value)}
+                disabled={testBusy}
+                className="rounded-[8px] border border-border-subtle bg-surface px-2 py-1.5 font-mono text-xs text-text-main"
+              >
+                <option value="">- pilih model -</option>
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>{m.id}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-text-muted">
+              API key (jika requireApiKey)
+              <input
+                type="password"
+                placeholder="optional"
+                value={testKey}
+                onChange={(e) => saveTestKey(e.target.value)}
+                disabled={testBusy}
+                className="rounded-[8px] border border-border-subtle bg-surface px-2 py-1.5 font-mono text-xs text-text-main"
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            <span className="text-text-muted">Scope:</span>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="test-scope" checked={testScope === "draft"} onChange={() => setTestScope("draft")} disabled={testBusy} />
+              Draft (client)
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="test-scope" checked={testScope === "global"} onChange={() => setTestScope("global")} disabled={testBusy} />
+              Global
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="test-scope" checked={testScope === "model"} onChange={() => setTestScope("model")} disabled={testBusy} />
+              Override model
+            </label>
+            <span className="ml-auto text-text-muted">Mode:</span>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="test-mode" checked={testMode === "single"} onChange={() => setTestMode("single")} disabled={testBusy} />
+              System prompt
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="test-mode" checked={testMode === "chat"} onChange={() => setTestMode("chat")} disabled={testBusy} />
+              Chat script
+            </label>
+          </div>
+
+          {testMode === "single" ? (
+            <textarea
+              rows={6}
+              value={testPrompt}
+              onChange={(e) => setTestPrompt(e.target.value)}
+              disabled={testBusy}
+              placeholder="System prompt nak test (kosong = ikut setting sedia ada bila scope Global/Override)..."
+              className="w-full font-mono text-xs p-3 rounded-[10px] border border-border-subtle bg-surface-2 text-text-main transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+            />
+          ) : (
+            <div className="space-y-2">
+              {testTurns.map((t, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <select
+                    value={t.role}
+                    disabled={testBusy}
+                    onChange={(e) => setTestTurns((ts) => ts.map((x, j) => (j === i ? { ...x, role: e.target.value } : x)))}
+                    className="shrink-0 rounded-[8px] border border-border-subtle bg-surface px-2 py-1.5 text-xs text-text-main"
+                  >
+                    <option value="user">user</option>
+                    <option value="assistant">assistant</option>
+                  </select>
+                  <textarea
+                    rows={2}
+                    value={t.content}
+                    disabled={testBusy}
+                    onChange={(e) => setTestTurns((ts) => ts.map((x, j) => (j === i ? { ...x, content: e.target.value } : x)))}
+                    placeholder={t.role === "user" ? "Mesej user palsu..." : "Balasan bot palsu..."}
+                    className="flex-1 font-mono text-xs p-2 rounded-[8px] border border-border-subtle bg-surface text-text-main transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                  />
+                  <Button variant="ghost" size="sm" disabled={testBusy} onClick={() => setTestTurns((ts) => ts.filter((_, j) => j !== i))}>
+                    Buang
+                  </Button>
+                </div>
+              ))}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={testBusy}
+                  onClick={() => setTestTurns((ts) => [...ts, { role: nextTestRole(ts), content: "" }])}
+                >
+                  + Turn {nextTestRole(testTurns) === "user" ? "user" : "assistant"}
+                </Button>
+                <span className="ml-auto text-[11px] text-text-muted tabular-nums">
+                  {testTurns.filter((t) => t.content.trim()).length} turn terpakai
+                </span>
+              </div>
+            </div>
+          )}
+
+          <Input
+            placeholder="Soalan ujian..."
+            value={testQuestion}
+            onChange={(e) => setTestQuestion(e.target.value)}
+            disabled={testBusy}
+          />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="primary" size="sm" disabled={testBusy || !testModel} onClick={runTest}>
+              {testBusy ? "Menjalankan..." : "Jalan test"}
+            </Button>
+            <Button variant="ghost" size="sm" disabled={testBusy} onClick={() => setShowPayload((v) => !v)}>
+              {showPayload ? "Sembunyi payload" : "Lihat payload"}
+            </Button>
+            <span className="ml-auto text-[11px] text-text-muted">
+              Draft = compose kat client. Global/Override = simpan dulu, server inject, lepas tu hantar soalan je.
+            </span>
+          </div>
+
+          {showPayload && (
+            <pre className="max-h-64 overflow-auto rounded-[10px] border border-border-subtle bg-surface-2 p-3 text-[11px] font-mono text-text-main">
+{JSON.stringify(buildTestMessages(testScope), null, 2)}
+            </pre>
+          )}
+
+          {testErr && (
+            <div className="rounded-[10px] bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-500">
+              {testErr}
+            </div>
+          )}
+
+          {testOut && (
+            <div className="rounded-[10px] border border-border-subtle bg-surface-2 p-3 space-y-2">
+              <div className="flex flex-wrap gap-3 text-[11px] text-text-muted tabular-nums">
+                <span>model: <code className="text-brand-500">{testOut.model}</code></span>
+                <span>{testOut.ms}ms</span>
+                {testOut.usage && (
+                  <span>
+                    tokens: {testOut.usage.prompt_tokens ?? "?"} in / {testOut.usage.completion_tokens ?? "?"} out
+                  </span>
+                )}
+              </div>
+              <div className="whitespace-pre-wrap text-sm text-text-main">{testOut.text}</div>
+            </div>
+          )}
+        </div>
+      </Card>
 
       <Card title="Prompt global" subtitle="Fallback untuk model yang tiada override" icon="public">
         <div className="flex gap-4 mb-3">
@@ -280,6 +487,21 @@ export default function InjectionClient() {
         <div className="mt-3 flex items-center justify-between">
           <span className="text-xs text-text-muted tabular-nums">{currentPrompt.length} aksara</span>
           <div className="flex gap-2">
+            <input
+              ref={globalFileRef}
+              type="file"
+              accept=".md,.markdown,.txt,text/markdown,text/plain"
+              className="hidden"
+              onChange={onPickGlobalFile}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!enabled}
+              onClick={() => globalFileRef.current?.click()}
+            >
+              Muat naik .md
+            </Button>
             {!useDefault && (
               <Button variant="primary" size="sm" disabled={saving || !enabled} onClick={() => save({ customPromptText: draft.trim() })}>
                 {saving ? "Menyimpan..." : "Simpan global"}
@@ -287,6 +509,7 @@ export default function InjectionClient() {
             )}
           </div>
         </div>
+        {uploadMsg && <div className="mt-2 text-xs text-text-muted">{uploadMsg}</div>}
       </Card>
 
       <Card
@@ -485,7 +708,32 @@ export default function InjectionClient() {
                       placeholder={"Prompt khusus untuk " + id + "..."}
                       className="mt-2 w-full font-mono text-xs p-3 rounded-[8px] border border-border-subtle bg-surface text-text-main transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-500/30 disabled:opacity-50"
                     />
-                    <div className="mt-1 text-right text-xs text-text-muted tabular-nums">{prompt.length} aksara</div>
+                    <div className="mt-1 flex items-center justify-between">
+                      <span className="text-xs text-text-muted">
+                        Guna butang ini untuk muat naik fail prompt sistem.
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          ref={modelFileRef}
+                          type="file"
+                          accept=".md,.markdown,.txt,text/markdown,text/plain"
+                          className="hidden"
+                          onChange={onPickModelFile}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={!enabled}
+                          onClick={() => {
+                            modelFileTarget.current = id;
+                            modelFileRef.current?.click();
+                          }}
+                        >
+                          Muat naik .md
+                        </Button>
+                        <span className="text-xs text-text-muted tabular-nums">{prompt.length} aksara</span>
+                      </div>
+                    </div>
                   </>
                 )}
               </div>
@@ -565,163 +813,7 @@ export default function InjectionClient() {
         </div>
       </Card>
 
-      <Card
-        title="Tester / Playground"
-        subtitle="Test system prompt atau chat script terus melalui pipeline sebenar - server yang buat injection."
-        icon="science"
-      >
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 text-xs text-text-muted">
-              Model
-              <select
-                value={testModel}
-                onChange={(e) => setTestModel(e.target.value)}
-                disabled={testBusy}
-                className="rounded-[8px] border border-border-subtle bg-surface px-2 py-1.5 font-mono text-xs text-text-main"
-              >
-                <option value="">- pilih model -</option>
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>{m.id}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-text-muted">
-              API key (jika requireApiKey)
-              <input
-                type="password"
-                placeholder="optional"
-                value={testKey}
-                onChange={(e) => saveTestKey(e.target.value)}
-                disabled={testBusy}
-                className="rounded-[8px] border border-border-subtle bg-surface px-2 py-1.5 font-mono text-xs text-text-main"
-              />
-            </label>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-xs">
-            <span className="text-text-muted">Scope:</span>
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input type="radio" name="test-scope" checked={testScope === "draft"} onChange={() => setTestScope("draft")} disabled={testBusy} />
-              Draft (client)
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input type="radio" name="test-scope" checked={testScope === "global"} onChange={() => setTestScope("global")} disabled={testBusy} />
-              Global
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input type="radio" name="test-scope" checked={testScope === "model"} onChange={() => setTestScope("model")} disabled={testBusy} />
-              Override model
-            </label>
-            <span className="ml-auto text-text-muted">Mode:</span>
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input type="radio" name="test-mode" checked={testMode === "single"} onChange={() => setTestMode("single")} disabled={testBusy} />
-              System prompt
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input type="radio" name="test-mode" checked={testMode === "chat"} onChange={() => setTestMode("chat")} disabled={testBusy} />
-              Chat script
-            </label>
-          </div>
-
-          {testMode === "single" ? (
-            <textarea
-              rows={6}
-              value={testPrompt}
-              onChange={(e) => setTestPrompt(e.target.value)}
-              disabled={testBusy}
-              placeholder="System prompt nak test (kosong = ikut setting sedia ada bila scope Global/Override)..."
-              className="w-full font-mono text-xs p-3 rounded-[10px] border border-border-subtle bg-surface-2 text-text-main transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-            />
-          ) : (
-            <div className="space-y-2">
-              {testTurns.map((t, i) => (
-                <div key={i} className="flex items-start gap-2">
-                  <select
-                    value={t.role}
-                    disabled={testBusy}
-                    onChange={(e) => setTestTurns((ts) => ts.map((x, j) => (j === i ? { ...x, role: e.target.value } : x)))}
-                    className="shrink-0 rounded-[8px] border border-border-subtle bg-surface px-2 py-1.5 text-xs text-text-main"
-                  >
-                    <option value="user">user</option>
-                    <option value="assistant">assistant</option>
-                  </select>
-                  <textarea
-                    rows={2}
-                    value={t.content}
-                    disabled={testBusy}
-                    onChange={(e) => setTestTurns((ts) => ts.map((x, j) => (j === i ? { ...x, content: e.target.value } : x)))}
-                    placeholder={t.role === "user" ? "Mesej user palsu..." : "Balasan bot palsu..."}
-                    className="flex-1 font-mono text-xs p-2 rounded-[8px] border border-border-subtle bg-surface text-text-main transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-                  />
-                  <Button variant="ghost" size="sm" disabled={testBusy} onClick={() => setTestTurns((ts) => ts.filter((_, j) => j !== i))}>
-                    Buang
-                  </Button>
-                </div>
-              ))}
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={testBusy}
-                  onClick={() => setTestTurns((ts) => [...ts, { role: nextTestRole(ts), content: "" }])}
-                >
-                  + Turn {nextTestRole(testTurns) === "user" ? "user" : "assistant"}
-                </Button>
-                <span className="ml-auto text-[11px] text-text-muted tabular-nums">
-                  {testTurns.filter((t) => t.content.trim()).length} turn terpakai
-                </span>
-              </div>
-            </div>
-          )}
-
-          <Input
-            placeholder="Soalan ujian..."
-            value={testQuestion}
-            onChange={(e) => setTestQuestion(e.target.value)}
-            disabled={testBusy}
-          />
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="primary" size="sm" disabled={testBusy || !testModel} onClick={runTest}>
-              {testBusy ? "Menjalankan..." : "Jalan test"}
-            </Button>
-            <Button variant="ghost" size="sm" disabled={testBusy} onClick={() => setShowPayload((v) => !v)}>
-              {showPayload ? "Sembunyi payload" : "Lihat payload"}
-            </Button>
-            <span className="ml-auto text-[11px] text-text-muted">
-              Draft = compose kat client. Global/Override = simpan dulu, server inject, lepas tu hantar soalan je.
-            </span>
-          </div>
-
-          {showPayload && (
-            <pre className="max-h-64 overflow-auto rounded-[10px] border border-border-subtle bg-surface-2 p-3 text-[11px] font-mono text-text-main">
-{JSON.stringify(buildTestMessages(testScope), null, 2)}
-            </pre>
-          )}
-
-          {testErr && (
-            <div className="rounded-[10px] bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-500">
-              {testErr}
-            </div>
-          )}
-
-          {testOut && (
-            <div className="rounded-[10px] border border-border-subtle bg-surface-2 p-3 space-y-2">
-              <div className="flex flex-wrap gap-3 text-[11px] text-text-muted tabular-nums">
-                <span>model: <code className="text-brand-500">{testOut.model}</code></span>
-                <span>{testOut.ms}ms</span>
-                {testOut.usage && (
-                  <span>
-                    tokens: {testOut.usage.prompt_tokens ?? "?"} in / {testOut.usage.completion_tokens ?? "?"} out
-                  </span>
-                )}
-              </div>
-              <div className="whitespace-pre-wrap text-sm text-text-main">{testOut.text}</div>
-            </div>
-          )}
-        </div>
-      </Card>
     </div>
   );
 }

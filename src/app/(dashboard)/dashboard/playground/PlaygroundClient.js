@@ -20,6 +20,11 @@ export default function PlaygroundClient() {
   const [testResult, setTestResult] = useState(null);
   const [testError, setTestError] = useState(null);
   const [showPayload, setShowPayload] = useState(true);
+  const [modelQuery, setModelQuery] = useState("");
+  const mq = modelQuery.trim().toLowerCase();
+  const filteredModels = mq
+    ? models.filter((m) => ((m.display || "") + " " + m.id).toLowerCase().includes(mq))
+    : models;
 
   useEffect(() => {
     (async () => {
@@ -54,13 +59,17 @@ export default function PlaygroundClient() {
             prefix = prefix.replace("openai-compatible-chat-", "").replace("-node", "");
           }
           
+          let displayModelName = m.name || modelName;
+          if (prefix.includes("notion") && m.name && m.name !== modelName) {
+            displayModelName = `${m.name} (${modelName})`;
+          }
           const formattedId = `${prefix}/${modelName}`;
           if (seen.has(formattedId)) continue;
           seen.add(formattedId);
 
           list.push({
             id: formattedId,
-            display: `${prefix}/${modelName}`,
+            display: `${prefix}/${displayModelName}`,
             provider: info.name || prefix,
           });
         }
@@ -68,6 +77,11 @@ export default function PlaygroundClient() {
         // Susun mengikut abjad prefix kemudian nama model
         list.sort((a, b) => a.display.localeCompare(b.display));
 
+                // Pastikan model sah Kiro Claude Sonnet & Haiku sentiasa ada dalam picker
+        if (!list.some(m => m.id === "kr/claude-sonnet-4.5")) {
+          list.push({ id: "kr/claude-sonnet-4.5", display: "kr/Claude Sonnet 4.5", provider: "Kiro AI" });
+          list.push({ id: "kr/claude-haiku-4.5", display: "kr/Claude Haiku 4.5", provider: "Kiro AI" });
+        }
         setModels(list);
         if (list.length > 0 && !testModel) {
           const gem = list.find((m) => m.id.includes("gemini-3.8-flash") || m.id.startsWith("ag/")) || list[0];
@@ -179,18 +193,18 @@ export default function PlaygroundClient() {
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-xs text-text-muted">
-              Model
-              <select
-                value={testModel}
-                onChange={(e) => setTestModel(e.target.value)}
+              Model (cari)
+              <input
+                type="text"
+                placeholder="Cari model... (cth: gemini, notion, agcli)"
+                value={modelQuery}
+                onChange={(e) => setModelQuery(e.target.value)}
                 disabled={testBusy}
                 className="rounded-[8px] border border-border bg-surface px-3 py-2 font-mono text-xs text-text-main focus:outline-none focus:border-primary"
-              >
-                <option value="">- pilih model -</option>
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>{m.display || m.id}</option>
-                ))}
-              </select>
+              />
+              <span className="text-[11px] font-mono text-text-muted break-all">
+                dipilih: {testModel || "-"}
+              </span>
             </label>
             <label className="flex flex-col gap-1 text-xs text-text-muted">
               API key (pilihan / auto-bypass jika logged in)
@@ -203,6 +217,29 @@ export default function PlaygroundClient() {
                 className="rounded-[8px] border border-border bg-surface px-3 py-2 font-mono text-xs text-text-main focus:outline-none focus:border-primary"
               />
             </label>
+          </div>
+
+          <div className="rounded-[8px] border border-border bg-surface-2 overflow-hidden">
+            <div className="max-h-56 overflow-y-auto">
+              {filteredModels.slice(0, 80).map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => { setTestModel(m.id); setModelQuery(""); }}
+                  disabled={testBusy}
+                  className={"w-full text-left px-3 py-1.5 text-xs flex items-center justify-between gap-3 hover:bg-surface " + (m.id === testModel ? "bg-surface text-primary" : "text-text-main")}
+                >
+                  <span className="font-mono truncate">{m.display || m.id}</span>
+                  <span className="text-[10px] text-text-muted shrink-0">{m.provider}</span>
+                </button>
+              ))}
+              {filteredModels.length === 0 && (
+                <div className="px-3 py-2 text-xs text-text-muted">Tiada model padan dgn carian tu.</div>
+              )}
+            </div>
+            <div className="px-3 py-1.5 text-[11px] text-text-muted border-t border-border/50">
+              {filteredModels.length} daripada {models.length} model{filteredModels.length > 80 ? " - tunjuk 80 pertama, taip lagi spesifik" : ""}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-xs pt-1 border-t border-border/50">

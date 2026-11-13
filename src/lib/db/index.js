@@ -3,6 +3,8 @@ import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 
 // Settings
+export { addRelayBytes, getRelayBytes } from "./repos/relayByteRepo.js";
+
 export {
   getSettings, updateSettings, isCloudEnabled, getCloudUrl, exportSettings,
 } from "./repos/settingsRepo.js";

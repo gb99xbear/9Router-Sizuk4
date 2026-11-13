@@ -590,6 +590,14 @@ export default function ProviderDetailPage() {
     }
   };
 
+  // Refetch the whole model list after a batch import / delete-all.
+  // The batch API bypasses the per-model handlers, so the parent state has to
+  // be refreshed explicitly - otherwise the list looks unchanged until remount.
+  const handleModelsBatchChanged = useCallback(async () => {
+    await fetchCustomModels();
+    await fetchAliases();
+  }, [fetchCustomModels, fetchAliases]);
+
   const handleDeleteAlias = async (alias) => {
     try {
       const res = await fetch(`/api/models/alias?alias=${encodeURIComponent(alias)}`, {
@@ -1243,6 +1251,7 @@ export default function ProviderDetailPage() {
           onDeleteAlias={handleDeleteAlias}
           onAddCustomModel={(modelId) => handleAddCustomModel(modelId, "llm", providerStorageAlias)}
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
+          onModelsBatchChanged={handleModelsBatchChanged}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
         />

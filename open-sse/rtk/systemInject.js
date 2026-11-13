@@ -301,8 +301,10 @@ function injectKiroSystem(body, prompt) {
       }
     } catch (_) { targetMsg = null; }
 
+    // Kiro upstream API rejects top-level body.systemPrompt with 400 REQUEST_BODY_INVALID.
+    // System prompt must ONLY live inside targetMsg.content.
+    delete body.systemPrompt;
     let sysWritten = false;
-    try { body.systemPrompt = next; sysWritten = true; } catch (_) {}
 
     const applyContent = () => {
       const content = typeof targetMsg.content === "string" ? targetMsg.content : "";

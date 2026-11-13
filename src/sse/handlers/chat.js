@@ -236,13 +236,22 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // (330 for TokenHarbor) and re-uploads the entire prompt through the relay on
   // each hop: measured 39,978 relay calls for 827 successes, ~25 GB of egress in
   // four days. The cap depends on what the error says about its own scope.
-  const MAX_ACCOUNT_ATTEMPTS = Number(process.env.OC_MAX_ACCOUNT_ATTEMPTS || 20);
-  // A provider-wide throttle is not an account fault: rotating cannot help.
-  const MAX_ATTEMPTS_PROVIDER_BUSY = 10;
+  const MAX_ACCOUNT_ATTEMPTS = Number(process.env.OC_MAX_ACCOUNT_ATTEMPTS || 40);
+  // "under heavy load" is applied per ACCOUNT by TokenHarbor, so rotating does
+  // help - but only up to the number of accounts that are still cool. Measured
+  // once: 95 of 405 accounts throttled in an hour across 38 of 40 relays, which
+  // exhausted a cap of 10 before a healthy key was reached. Allow a full sweep.
+  const MAX_ATTEMPTS_PROVIDER_BUSY = 40;
   // An explicit retry window means "come back later", not "another account".
   const MAX_ATTEMPTS_RETRY_WINDOW = 15;
+  // KEY-scoped refusals (one key's own quota / policy state) DO benefit from
+  // rotation: the next key on another relay is very likely healthy. Give them a
+  // large budget so a request keeps skipping dead keys instead of dying early.
+  const MAX_ATTEMPTS_KEY_SCOPED = Number(process.env.OC_MAX_ATTEMPTS_KEY_SCOPED || 80);
   const PROVIDER_BUSY_RE = /under heavy load|server[_ ]busy|overloaded|service busy/i;
   const RETRY_WINDOW_RE = /at capacity for your account|retry in about|per-minute rate limit/i;
+  // Errors that belong to ONE key: rotating to another key genuinely helps.
+  const KEY_SCOPED_RE = /hourly rate limit|content-policy grounds|shared allowance for such accounts|free allowance|used this period|come back in a little while/i;
   let accountAttempts = 0;
 
   while (true) {
@@ -428,12 +437,18 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const errText = String(result.error || "");
       const cap = PROVIDER_BUSY_RE.test(errText)
         ? MAX_ATTEMPTS_PROVIDER_BUSY
-        : RETRY_WINDOW_RE.test(errText)
-          ? MAX_ATTEMPTS_RETRY_WINDOW
-          : MAX_ACCOUNT_ATTEMPTS;
+        : KEY_SCOPED_RE.test(errText)
+          ? MAX_ATTEMPTS_KEY_SCOPED
+          : RETRY_WINDOW_RE.test(errText)
+            ? MAX_ATTEMPTS_RETRY_WINDOW
+            : MAX_ACCOUNT_ATTEMPTS;
 
       if (accountAttempts >= cap) {
-        const why = cap === MAX_ACCOUNT_ATTEMPTS ? "attempt budget" : "provider-side throttle";
+        const why = cap === MAX_ATTEMPTS_KEY_SCOPED
+          ? "key-scoped budget (all accounts refused)"
+          : cap === MAX_ACCOUNT_ATTEMPTS
+            ? "attempt budget"
+            : "provider-side throttle";
         log.warn("FALLBACK", `⇄ STOP after ${accountAttempts} account(s) for [${provider}/${model}] (${result.status}) — ${why}; not rotating further`);
         return errorResponse(
           lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE,
