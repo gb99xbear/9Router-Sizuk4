@@ -52,10 +52,12 @@ export function createCapabilityChallenge() {
   return { challengeId, verificationCode, prompt };
 }
 
-// Byte-accurate cap. Trims whole code units until the UTF-8 encoding fits within
-// `limit`, so the result is never longer than the cap and never contains a
-// replacement character from a split multibyte sequence. Terminates in at most
-// 4 iterations because one code unit is at most 4 UTF-8 bytes.
+// Byte-accurate cap. Trims one UTF-16 code unit at a time until the UTF-8
+// encoding fits within `limit`, so the result is never longer than the cap and
+// never contains a replacement character from a split multibyte sequence. The
+// initial slice is bounded by UTF-16 code units, not UTF-8 bytes, so multibyte
+// input can start well above the byte budget and the loop can take O(limit)
+// iterations; the result is always correct but not constant-time here.
 export function truncateContent(value, limit = MAX_CONTENT_BYTES) {
   const str = typeof value === "string" ? value : String(value);
   if (Buffer.byteLength(str, "utf8") <= limit) {

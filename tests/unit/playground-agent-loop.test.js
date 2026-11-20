@@ -256,4 +256,89 @@ describe("runCapabilityToolLoop", () => {
     expect(result.verdict).toBe("ERROR");
     expect(complete).toHaveBeenCalledTimes(1);
   });
+
+  it("PARTIAL - an empty verificationCode can never yield PASS", async () => {
+    const challenge = { challengeId: "id-empty", verificationCode: "" };
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(
+        completionWithToolCalls([
+          toolCall("call_1", "lookup_capability_fixture", { challenge_id: "id-empty" }),
+        ]),
+      )
+      .mockResolvedValueOnce(completionWithText("totally wrong text"));
+
+    const result = await runCapabilityToolLoop({
+      messages: baseMessages(challenge),
+      model: "m",
+      complete,
+      challenge,
+    });
+
+    expect(result.verdict).not.toBe("PASS");
+    expect(result.verdict).toBe("PARTIAL");
+  });
+
+  it("PARTIAL - an empty verificationCode with an empty final answer", async () => {
+    const challenge = { challengeId: "id-empty2", verificationCode: "" };
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(
+        completionWithToolCalls([
+          toolCall("call_1", "lookup_capability_fixture", { challenge_id: "id-empty2" }),
+        ]),
+      )
+      .mockResolvedValueOnce(completionWithText(""));
+
+    const result = await runCapabilityToolLoop({
+      messages: baseMessages(challenge),
+      model: "m",
+      complete,
+      challenge,
+    });
+
+    expect(result.verdict).toBe("PARTIAL");
+  });
+
+  it("PARTIAL - an absent verificationCode key can never yield PASS", async () => {
+    const challenge = { challengeId: "id-absent" };
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(
+        completionWithToolCalls([
+          toolCall("call_1", "lookup_capability_fixture", { challenge_id: "id-absent" }),
+        ]),
+      )
+      .mockResolvedValueOnce(completionWithText("arbitrary text that is not a code"));
+
+    const result = await runCapabilityToolLoop({
+      messages: baseMessages(challenge),
+      model: "m",
+      complete,
+      challenge,
+    });
+
+    expect(result.verdict).toBe("PARTIAL");
+  });
+
+  it("PARTIAL - a null verificationCode can never yield PASS", async () => {
+    const challenge = { challengeId: "id-null", verificationCode: null };
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(
+        completionWithToolCalls([
+          toolCall("call_1", "lookup_capability_fixture", { challenge_id: "id-null" }),
+        ]),
+      )
+      .mockResolvedValueOnce(completionWithText("arbitrary text that is not a code"));
+
+    const result = await runCapabilityToolLoop({
+      messages: baseMessages(challenge),
+      model: "m",
+      complete,
+      challenge,
+    });
+
+    expect(result.verdict).toBe("PARTIAL");
+  });
 });

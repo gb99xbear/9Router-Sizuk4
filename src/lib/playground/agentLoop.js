@@ -152,7 +152,7 @@ export async function runCapabilityToolLoop(options = {}) {
           // The very first completion answered in plain text without a tool.
           return { answer, verdict: "FAIL", trace };
         }
-        if (sawValidLookup && answer.includes(verificationCode)) {
+        if (sawValidLookup && verificationCode.length > 0 && answer.includes(verificationCode)) {
           return { answer, verdict: "PASS", trace };
         }
         return { answer, verdict: "PARTIAL", trace };
