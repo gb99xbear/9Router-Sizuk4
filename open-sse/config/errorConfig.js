@@ -97,6 +97,12 @@ export const ERROR_RULES = [
   { text: "content-policy grounds",   cooldownMs: 30 * 60 * 1000 },
   { text: "shared allowance",         cooldownMs: 30 * 60 * 1000 },
 
+  // TokenHarbor: "Rate limit reached. You can send your next request in 59 min 1 s."
+  // The body tells us when to come back; park the key for exactly that (capped at
+  // 65 min). The generic "rate limit" ladder caps at 3 min, so the key returned far
+  // too early and 429'd again - 44% of TokenHarbor 429s were this exact message.
+  { text: "next request in",          parseWait: true, maxMs: 65 * 60 * 1000 },
+
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },

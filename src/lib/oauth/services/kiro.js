@@ -276,7 +276,7 @@ export class KiroService {
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
       },
-      body: JSON.stringify({ maxResults: 10 }),
+      body: JSON.stringify({}),
     });
 
     if (!response.ok) {

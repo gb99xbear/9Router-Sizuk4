@@ -400,6 +400,11 @@ export const PATTERN_CAPABILITIES = [
   // ── OpenCode Free Muse Spark (multimodal text+image; OpenAI Responses reasoning supports up to xhigh) ─
   { pattern: "*muse*spark*",    caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 } },
   // ── Others ───────────────────────────────────────────────────────
+  // Hunyuan 4 (hy4 / hy4-preview / hy4:free): 1,000,000-token context,
+  // 64,000 max output (mirrors the codebuddy-cn hy4-preview entry). Declared so
+  // providers serving hy4 directly (e.g. crowllm) resolve the real limits
+  // instead of the 200K/64K default.
+  { pattern: "hy4*",            caps: { contextWindow: 1000000, maxOutput: 64000 } },
   { pattern: "*hunyuan*",       caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "hy3*",            caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
   // StepFun Step-5 family. Published by the model card and OpenRouter:

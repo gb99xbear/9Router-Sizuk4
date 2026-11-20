@@ -138,7 +138,8 @@ export class BaseExecutor {
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
       try {
-        const bodyStr = JSON.stringify(transformedBody);
+        console.log(`[EXEC-DEBUG] provider=${this.provider} stream_arg=${stream} body_stream=${transformedBody.stream} body_keys=${Object.keys(transformedBody).join(",")}`);
+      const bodyStr = JSON.stringify(transformedBody);
                 if (url.includes('kiro')) {
           console.log('[KIRO-FETCH-URL]', url);
           console.log('[KIRO-FETCH-HEADERS]', JSON.stringify(headers));

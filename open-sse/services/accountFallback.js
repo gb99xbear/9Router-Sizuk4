@@ -23,6 +23,22 @@ export function getQuotaCooldown(backoffLevel = 0) {
  * @param {number} backoffLevel - Current backoff level for exponential backoff
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
+/**
+ * Parse a wait duration out of an upstream message, e.g.
+ *   "Rate limit reached. You can send your next request in 59 min 1 s." -> 3541000
+ *   "... in 9 s." -> 9000
+ * Returns 0 when no duration is present.
+ */
+export function parseWaitMs(text) {
+  const s = String(text || "");
+  const m = s.match(/next request in\s+(?:(\d+)\s*min[a-z]*)?\s*(?:(\d+)\s*s[a-z]*)?/i);
+  if (!m || (!m[1] && !m[2])) return 0;
+  const mins = parseInt(m[1] || "0", 10);
+  const secs = parseInt(m[2] || "0", 10);
+  const ms = (mins * 60 + secs) * 1000;
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 export function checkFallbackError(status, errorText, backoffLevel = 0, retryAfterMs = 0) {
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
@@ -31,6 +47,13 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, retryAft
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
     if (rule.text && lowerError && lowerError.includes(rule.text)) {
+      // Rule asks us to read the retry window out of the message itself.
+      if (rule.parseWait) {
+        const wait = parseWaitMs(errorText);
+        const cap = rule.maxMs || RETRY_AFTER_MAX_MS;
+        const cooldownMs = Math.min(Math.max(wait || RATE_LIMIT_FLOOR_MS, RATE_LIMIT_FLOOR_MS), cap);
+        return { shouldFallback: true, cooldownMs };
+      }
       if (rule.backoff) {
         const cap = rule.maxLevel || BACKOFF_CONFIG.maxLevel;
         const newLevel = Math.min(backoffLevel + 1, cap);

@@ -8,11 +8,12 @@ import {
   ANTHROPIC_COMPATIBLE_PREFIX,
 } from "@/shared/constants/providers";
 import { testSingleConnection } from "../[id]/test/testUtils.js";
+import { normalizeAuthType, isApiKeyAuth } from "@/shared/utils/authType";
 
 function getAuthGroup(providerId, connection = null) {
   // Prioritize authType from connection if available
   if (connection?.authType) {
-    if (connection.authType === "oauth") {
+    if (normalizeAuthType(connection.authType) === "oauth") {
       // Check if it's a free provider
       if (FREE_PROVIDERS[providerId]) return "free";
       return "oauth";

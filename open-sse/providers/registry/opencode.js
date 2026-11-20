@@ -12,6 +12,7 @@ export default {
   },
   category: "free",
   noAuth: true,
+  forceStream: true,
   transport: {
     baseUrl: "http://127.0.0.1:8090/v1",
     headers: {

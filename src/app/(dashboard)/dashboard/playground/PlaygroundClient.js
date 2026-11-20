@@ -20,6 +20,8 @@ export default function PlaygroundClient() {
   const [testResult, setTestResult] = useState(null);
   const [testError, setTestError] = useState(null);
   const [showPayload, setShowPayload] = useState(true);
+  const [testTools, setTestTools] = useState("");
+  const [useTools, setUseTools] = useState(false);
   const [modelQuery, setModelQuery] = useState("");
   const mq = modelQuery.trim().toLowerCase();
   const filteredModels = mq
@@ -137,12 +139,13 @@ export default function PlaygroundClient() {
       const res = await fetch("/v1/chat/completions", {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          model: testModel,
-          messages: payloadMessages,
-          stream: false,
-          max_tokens: 300,
-        }),
+        body: (() => {
+          const body = { model: testModel, messages: payloadMessages, stream: false, max_tokens: 300 };
+          if (useTools && testTools.trim()) {
+            try { body.tools = JSON.parse(testTools); } catch (e) { console.error("tools parse:", e); }
+          }
+          return JSON.stringify(body);
+        })(),
       });
 
       const elapsed = Math.round(performance.now() - t0);
@@ -302,6 +305,23 @@ export default function PlaygroundClient() {
               disabled={testBusy}
               className="w-full font-mono text-xs p-3 rounded-[8px] border border-border bg-surface text-text-main focus:outline-none focus:border-primary"
             />
+          </div>
+
+          <div className="pt-2">
+            <label className="flex items-center gap-2 text-xs text-text-muted">
+              <input type="checkbox" checked={useTools} onChange={(e) => setUseTools(e.target.checked)} disabled={testBusy} />
+              Guna Tools (JSON array)
+            </label>
+            {useTools && (
+              <textarea
+                value={testTools}
+                onChange={(e) => setTestTools(e.target.value)}
+                disabled={testBusy}
+                rows={8}
+                placeholder='[{"type":"function","function":{"name":"get_weather","parameters":{"type":"object","properties":{}}}}]'
+                className="w-full font-mono text-xs p-3 rounded-[8px] border border-border bg-surface text-text-main focus:outline-none focus:border-primary mt-2"
+              />
+            )}
           </div>
 
           <div className="flex items-center justify-between pt-2">

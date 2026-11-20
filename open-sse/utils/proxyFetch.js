@@ -201,6 +201,12 @@ function normalizeProxyUrl(proxyUrl) {
   }
 }
 
+// TLS curve list for upstream handshakes. AWS OIDC resets an
+// X25519-only ClientHello; X25519 stays first, P-256 / P-384 follow.
+// NINEROUTER_TLS_ECDH_CURVE still overrides it.
+export const TLS_ECDH_CURVE_DEFAULT =
+  process.env.NINEROUTER_TLS_ECDH_CURVE || "X25519:prime256v1:secp384r1";
+
 function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
   const enabled = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true;
   if (!enabled) return null;
@@ -227,7 +233,15 @@ async function getDispatcher(proxyUrl) {
       proxyDispatchers.delete(proxyDispatchers.keys().next().value);
     }
     const { ProxyAgent } = await import("undici");
-    proxyDispatchers.set(normalized, new ProxyAgent({ uri: normalized }));
+    proxyDispatchers.set(
+      normalized,
+      new ProxyAgent({
+        uri: normalized,
+        // AWS OIDC resets a TLS handshake that offers X25519 alone, so a
+        // Kiro IdC / Builder ID sign-in failed with "fetch failed".
+        requestTls: { ecdhCurve: TLS_ECDH_CURVE_DEFAULT },
+      }),
+    );
   }
 
   return proxyDispatchers.get(normalized);

@@ -218,6 +218,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const reqLogger = await createRequestLogger(sourceFormat, targetFormat, model);
   if (clientRawRequest) reqLogger.logClientRawRequest(clientRawRequest.endpoint, clientRawRequest.body, clientRawRequest.headers);
   reqLogger.logRawRequest(body);
+  console.log(`[STREAM-DEBUG] INITIAL stream=${stream} provider=${provider} forceStream=${providerRequiresStreaming} bodyStream=${body.stream}`);
   log?.debug?.("FORMAT", `${sourceFormat} → ${targetFormat} | stream=${stream}`);
 
   // Native passthrough: CLI tool and provider are the same ecosystem
@@ -247,6 +248,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (passthrough) {
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
     translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
+    translatedBody.stream = stream;
+    console.log(`[STREAM-DEBUG] PASSTHROUGH set stream=${translatedBody.stream}`);
     if (provider === "codex") {
       const suffixThinking = {};
       applyThinking(sourceFormat, upstreamModel, suffixThinking, provider);
@@ -272,6 +275,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     customToolNames = translatedBody._customToolNames;
     delete translatedBody._customToolNames;
     translatedBody.model = stripThinkingSuffix(upstreamModel);
+    translatedBody.stream = stream;
+    console.log(`[STREAM-DEBUG] TRANSLATE set stream=${translatedBody.stream}`);
     stripContinuityFields(translatedBody);
   }
 
@@ -537,6 +542,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const executeWithPoolFallback = async (attempt = 0) => {
     let result;
     try {
+      console.log(`[STREAM-DEBUG] PRE-EXECUTE stream_arg=${stream} body_stream=${translatedBody.stream} provider=${provider} tools=${translatedBody.tools?.length||0}`);
       result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
     } catch (error) {
       if (error?.poolScoped && typeof resolveProxyConfig === "function" && attempt < MAX_POOL_RETRIES) {

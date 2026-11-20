@@ -72,8 +72,13 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
+  transformRequest(model, body, stream) {
+    console.log(`[DEF-DEBUG] entering transformRequest stream_param=${stream} body_stream_before=${body?.stream}`);
     const transformed = this.applyJsonSchemaFallback(body);
+    if (transformed && typeof transformed === "object" && stream !== undefined) {
+      transformed.stream = stream;
+    }
+    console.log(`[DEF-DEBUG] after set body_stream=${transformed?.stream}`);
 
     if (transformed && typeof transformed === "object") {
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field

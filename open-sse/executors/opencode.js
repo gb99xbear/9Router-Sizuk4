@@ -68,7 +68,7 @@ export class OpenCodeExecutor extends BaseExecutor {
     super("opencode", PROVIDERS.opencode);
   }
 
-  transformRequest(model, body, stream = false) {
+  transformRequest(model, body, stream = true) {
     const cleanModel = baseModelId(model);
     body = { ...body, model: cleanModel, stream };
     delete body.max_completion_tokens;
