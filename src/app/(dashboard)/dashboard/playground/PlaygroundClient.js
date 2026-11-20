@@ -4,6 +4,44 @@ import { useState, useEffect, useRef } from "react";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 
+// Kelas warna badge verdict untuk capability-test tool loop.
+const VERDICT_CLASS = new Map([
+  ["PASS", "text-green-500"],
+  ["PARTIAL", "text-amber-500"],
+  ["FAIL", "text-red-500"],
+  ["ERROR", "text-red-500"],
+]);
+
+const NEUTRAL_VERDICT_CLASS = "text-text-muted";
+
+// Warna teks untuk verdict. Verdict tak dikenali dapat warna neutral.
+export function verdictColor(verdict) {
+  return VERDICT_CLASS.get(verdict) || NEUTRAL_VERDICT_CLASS;
+}
+
+const TRUNCATION_SUFFIX = " ... (dipotong)";
+
+// Potong nilai panjang untuk paparan trace. String(value) dipakai supaya
+// Symbol, BigInt, objek circular, null dan undefined tak pernah melontar.
+export function truncateForDisplay(value, limit = 2000) {
+  let text;
+  try {
+    text = typeof value === "string" ? value : String(value);
+  } catch {
+    text = "";
+  }
+  if (text.length > limit) {
+    return { text: text.slice(0, limit) + TRUNCATION_SUFFIX, truncated: true };
+  }
+  return { text, truncated: false };
+}
+
+// Body POST untuk /api/playground/agent (capability test, read-only).
+export function buildAgentRequest({ model, messages } = {}) {
+  if (!model) throw new Error("model is required");
+  return { model, messages, capabilityTest: true };
+}
+
 export default function PlaygroundClient() {
   const [models, setModels] = useState([]);
   const [testModel, setTestModel] = useState("");
@@ -22,6 +60,10 @@ export default function PlaygroundClient() {
   const [showPayload, setShowPayload] = useState(true);
   const [testTools, setTestTools] = useState("");
   const [useTools, setUseTools] = useState(false);
+  const [agentTools, setAgentTools] = useState(false);
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentResult, setAgentResult] = useState(null);
+  const [showTrace, setShowTrace] = useState(false);
   const [modelQuery, setModelQuery] = useState("");
   const mq = modelQuery.trim().toLowerCase();
   const filteredModels = mq
@@ -176,6 +218,50 @@ export default function PlaygroundClient() {
     }
   };
 
+  const runCapabilityTest = async () => {
+    if (!agentTools || !testModel) return;
+    setAgentBusy(true);
+    setTestError(null);
+    setAgentResult(null);
+    setShowTrace(false);
+
+    const headers = { "Content-Type": "application/json" };
+    if (testKey.trim()) {
+      headers["Authorization"] = `Bearer ${testKey.trim()}`;
+    }
+
+    try {
+      const res = await fetch("/api/playground/agent", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(buildAgentRequest({ model: testModel, messages: buildPayload() })),
+      });
+
+      const text = await res.text();
+      let data = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+
+      if (!res.ok) {
+        setTestError(`HTTP ${res.status}: ${data?.error?.message || data?.error || text}`);
+      } else {
+        setAgentResult({
+          answer: data?.answer || "",
+          verdict: data?.verdict || "ERROR",
+          trace: Array.isArray(data?.trace) ? data.trace : [],
+          challengeId: data?.challengeId,
+        });
+      }
+    } catch (err) {
+      setTestError(`Network error: ${err.message}`);
+    } finally {
+      setAgentBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto p-4 sm:p-6">
       <div>
@@ -324,9 +410,90 @@ export default function PlaygroundClient() {
             )}
           </div>
 
+          <div className="pt-2 space-y-2">
+            <label className="flex items-center gap-2 text-xs text-text-muted">
+              <input
+                type="checkbox"
+                checked={agentTools}
+                onChange={(e) => setAgentTools(e.target.checked)}
+                disabled={testBusy || agentBusy}
+              />
+              Agent Tools (uji keupayaan tool, read-only)
+            </label>
+            <p className="text-[11px] text-text-muted">
+              Hantar 2 tool ujian deterministik. Tiada akses fail, shell, rangkaian atau kredensial.
+            </p>
+
+            {agentTools && (
+              <div className="space-y-3">
+                <Button
+                  onClick={runCapabilityTest}
+                  disabled={!agentTools || !testModel || testBusy || agentBusy}
+                >
+                  {agentBusy ? "Menjalankan..." : "Jalankan Capability Test"}
+                </Button>
+
+                {agentResult && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-medium">
+                      <span className="text-text-muted">Tool loop:</span>
+                      <span className={"font-mono font-semibold " + verdictColor(agentResult.verdict)}>
+                        {String(agentResult.verdict)}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      aria-expanded={showTrace}
+                      onClick={() => setShowTrace(!showTrace)}
+                      className="text-[11px] font-mono text-primary hover:opacity-80"
+                    >
+                      {showTrace ? "Sembunyi trace" : "Papar trace"}
+                    </button>
+
+                    {showTrace && (
+                      <div className="rounded-[8px] border border-border/40 overflow-x-auto divide-y divide-border/40">
+                        {agentResult.trace.length === 0 && (
+                          <div className="px-3 py-2 font-mono text-[11px] text-text-muted">Trace kosong.</div>
+                        )}
+                        {agentResult.trace.map((entry, idx) => (
+                          <div key={idx} className="px-3 py-2 space-y-1">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-text-muted">
+                              <span>round {String(entry?.round)}</span>
+                              <span>{String(entry?.type)}</span>
+                              <span className="text-text-main">{String(entry?.toolName || entry?.detail || "")}</span>
+                              <span>{String(entry?.status)}</span>
+                              {entry?.durationMs != null && <span>{String(entry.durationMs)}ms</span>}
+                            </div>
+                            {entry?.arguments != null && (
+                              <pre className="font-mono text-[11px] text-text-muted whitespace-pre-wrap break-all">
+                                {truncateForDisplay(entry.arguments).text}
+                              </pre>
+                            )}
+                            {entry?.result != null && (
+                              <pre className="font-mono text-[11px] text-text-muted whitespace-pre-wrap break-all border-t border-border/30 pt-1">
+                                {truncateForDisplay(entry.result).text}
+                              </pre>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {agentResult.answer && (
+                      <div className="p-3 rounded-[10px] bg-surface-2 border border-border font-sans text-sm text-text-main whitespace-pre-wrap leading-relaxed">
+                        {String(agentResult.answer)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center justify-between pt-2">
             <div className="flex items-center gap-2">
-              <Button onClick={runTest} disabled={testBusy || !testModel}>
+              <Button onClick={runTest} disabled={testBusy || agentBusy || !testModel}>
                 {testBusy ? "Menjana..." : "Jalan Test"}
               </Button>
               <Button variant="outline" size="sm" onClick={() => setShowPayload(!showPayload)}>
