@@ -14,7 +14,7 @@ import { describe, it, expect } from "vitest";
 import clientSource from "../../src/app/(dashboard)/dashboard/playground/PlaygroundClient.js?raw";
 
 const SUFFIX = " ... (dipotong)";
-const HELPERS = ["verdictColor", "truncateForDisplay", "buildAgentRequest"];
+const HELPERS = ["verdictColor", "truncateForDisplay", "formatTraceValue", "buildAgentRequest"];
 
 function loadClientHelpers(source) {
   const cut = source.indexOf("export default function PlaygroundClient");
@@ -36,6 +36,7 @@ function loadClientHelpers(source) {
 const {
   verdictColor,
   truncateForDisplay,
+  formatTraceValue,
   buildAgentRequest,
 } = loadClientHelpers(clientSource);
 
@@ -61,6 +62,12 @@ describe("PlaygroundClient source contract", () => {
   it("posts the capability test to the agent route without streaming", () => {
     expect(clientSource).toContain('fetch("/api/playground/agent"');
     expect(clientSource).toContain("capabilityTest: true");
+    expect(clientSource).not.toContain("stream: true");
+  });
+
+  it("routes trace arguments and result through formatTraceValue", () => {
+    expect(clientSource).toContain("truncateForDisplay(formatTraceValue(entry.arguments)).text");
+    expect(clientSource).toContain("truncateForDisplay(formatTraceValue(entry.result)).text");
   });
 });
 
@@ -142,6 +149,53 @@ describe("truncateForDisplay", () => {
     const out = truncateForDisplay(BigInt("1".repeat(2001)));
     expect(out.truncated).toBe(true);
     expect(out.text.length).toBe(2000 + SUFFIX.length);
+  });
+
+  it("truncates a long JSON string produced by formatTraceValue", () => {
+    const big = { content: "x".repeat(5000) };
+    const out = truncateForDisplay(formatTraceValue(big));
+    expect(out.truncated).toBe(true);
+    expect(out.text.endsWith(SUFFIX)).toBe(true);
+    expect(out.text.length).toBe(2000 + SUFFIX.length);
+  });
+});
+
+describe("formatTraceValue", () => {
+  it("leaves a JSON string alone so it is not double encoded", () => {
+    expect(formatTraceValue('{"challenge_id":"abc"}')).toBe('{"challenge_id":"abc"}');
+    expect(formatTraceValue("")).toBe("");
+  });
+
+  it("renders the backend tool result object as pretty JSON", () => {
+    const result = { ok: true, content: '{"verification_code":"4242"}' };
+    expect(formatTraceValue(result)).toBe(JSON.stringify(result, null, 2));
+    expect(formatTraceValue(result)).toContain("verification_code");
+    expect(formatTraceValue({ ok: false, content: "", error: "invalid_arguments" })).toContain(
+      "invalid_arguments",
+    );
+  });
+
+  it("renders arrays and nested values as JSON", () => {
+    expect(formatTraceValue([1, 2, 3])).toBe("[\n  1,\n  2,\n  3\n]");
+    expect(formatTraceValue({ a: { b: 1 } })).toBe(JSON.stringify({ a: { b: 1 } }, null, 2));
+  });
+
+  it("stringifies primitives", () => {
+    expect(formatTraceValue(0)).toBe("0");
+    expect(formatTraceValue(false)).toBe("false");
+    expect(formatTraceValue(null)).toBe("null");
+    expect(formatTraceValue(undefined)).toBe("undefined");
+  });
+
+  it("never throws on values JSON cannot represent", () => {
+    expect(() => formatTraceValue(10n)).not.toThrow();
+    expect(formatTraceValue(10n)).toBe("10");
+    expect(formatTraceValue(Symbol("probe"))).toBe("Symbol(probe)");
+
+    const circular = { name: "loop" };
+    circular.self = circular;
+    expect(() => formatTraceValue(circular)).not.toThrow();
+    expect(formatTraceValue(circular)).toBe("[object Object]");
   });
 });
 

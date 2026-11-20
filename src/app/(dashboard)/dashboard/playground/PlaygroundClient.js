@@ -36,6 +36,23 @@ export function truncateForDisplay(value, limit = 2000) {
   return { text, truncated: false };
 }
 
+// Paparan nilai trace. Backend hantar `arguments` sebagai JSON string dan
+// `result` sebagai objek ({ ok, content, error }), jadi string dibiar as-is
+// (elak double-encode) dan objek dijadikan JSON pretty. Nilai yang tak boleh
+// di-JSON-kan (circular, BigInt, Symbol) jatuh balik ke String(value).
+export function formatTraceValue(value) {
+  if (typeof value === "string") return value;
+  try {
+    const json = JSON.stringify(value, null, 2);
+    if (typeof json === "string") return json;
+  } catch {}
+  try {
+    return String(value);
+  } catch {
+    return "";
+  }
+}
+
 // Body POST untuk /api/playground/agent (capability test, read-only).
 export function buildAgentRequest({ model, messages } = {}) {
   if (!model) throw new Error("model is required");
@@ -464,12 +481,12 @@ export default function PlaygroundClient() {
                             </div>
                             {entry?.arguments != null && (
                               <pre className="font-mono text-[11px] text-text-muted whitespace-pre-wrap break-all">
-                                {truncateForDisplay(entry.arguments).text}
+                                {truncateForDisplay(formatTraceValue(entry.arguments)).text}
                               </pre>
                             )}
                             {entry?.result != null && (
                               <pre className="font-mono text-[11px] text-text-muted whitespace-pre-wrap break-all border-t border-border/30 pt-1">
-                                {truncateForDisplay(entry.result).text}
+                                {truncateForDisplay(formatTraceValue(entry.result)).text}
                               </pre>
                             )}
                           </div>
