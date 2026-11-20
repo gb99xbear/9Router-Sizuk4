@@ -52,13 +52,20 @@ export function createCapabilityChallenge() {
   return { challengeId, verificationCode, prompt };
 }
 
-function truncateContent(content) {
-  const text = typeof content === "string" ? content : String(content);
-  if (Buffer.byteLength(text, "utf8") <= MAX_CONTENT_BYTES) {
-    return text;
+// Byte-accurate cap. Trims whole code units until the UTF-8 encoding fits within
+// `limit`, so the result is never longer than the cap and never contains a
+// replacement character from a split multibyte sequence. Terminates in at most
+// 4 iterations because one code unit is at most 4 UTF-8 bytes.
+export function truncateContent(value, limit = MAX_CONTENT_BYTES) {
+  const str = typeof value === "string" ? value : String(value);
+  if (Buffer.byteLength(str, "utf8") <= limit) {
+    return str;
   }
-  const buffer = Buffer.from(text, "utf8");
-  return buffer.subarray(0, MAX_CONTENT_BYTES).toString("utf8");
+  let cut = str.slice(0, limit);
+  while (Buffer.byteLength(cut, "utf8") > limit) {
+    cut = cut.slice(0, -1);
+  }
+  return cut;
 }
 
 function okResult(payload) {
