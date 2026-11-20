@@ -1,0 +1,14 @@
+[Unit]
+Description=OpenCode egress auto-rotate check - when every egress IP is cooling, looks for a fresh WARP egress and restarts the rotator. Part of the OpenCode egress stack; do not pkill the processes it manages.
+Documentation=file:/home/ubuntu/tools/oc-egress-rotator/README.md
+After=oc-egress-rotator.service
+Requires=oc-egress-rotator.service
+
+[Service]
+Type=oneshot
+User=root
+Environment=ROTATE_INTERVAL=1800
+Environment=MAX_TRIES=6
+ExecStart=/home/ubuntu/warp/egress_autorotate.sh
+TimeoutStartSec=900
+Nice=10

@@ -1,0 +1,25 @@
+[Unit]
+Description=OpenCode egress rotator - picks which egress IP every OpenCode free-tier request leaves from and fails over on 429. DO NOT kill, stop or pkill: without it every request leaves from one IP and hits the per-IP daily cap. Managed by systemd; use "systemctl restart oc-egress-rotator" if it ever needs a bounce.
+Documentation=file:/home/ubuntu/tools/oc-egress-rotator/README.md
+After=network-online.target oc-warp-egress.service
+Wants=network-online.target
+Requires=oc-warp-egress.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/tools/oc-egress-rotator
+# EGRESSES has no Environment= default on purpose: the value must come from the
+# generated file, because a later Environment= line would override it.
+EnvironmentFile=-/home/ubuntu/warp/egresses.env
+Environment=LISTEN_HOST=127.0.0.1
+Environment=LISTEN_PORT=9090
+Environment=UPSTREAM=https://opencode.ai
+ExecStart=/usr/bin/node /home/ubuntu/tools/oc-egress-rotator/egress-rotator.js
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/ubuntu/warp/rotator.log
+StandardError=append:/home/ubuntu/warp/rotator.log
+
+[Install]
+WantedBy=multi-user.target

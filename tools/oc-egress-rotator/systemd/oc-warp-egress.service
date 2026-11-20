@@ -1,0 +1,17 @@
+[Unit]
+Description=OpenCode WARP egress layer - builds the netns tunnels + CONNECT proxies that give the OpenCode free tier extra egress IPs. DO NOT kill, stop or pkill: OpenCode free-tier requests lose their egress failover and start returning 429.
+Documentation=file:/home/ubuntu/tools/oc-egress-rotator/README.md
+After=network-online.target
+Wants=network-online.target
+Before=oc-egress-rotator.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+Environment=EXTRA_EGRESSES=3
+ExecStart=/home/ubuntu/warp/egress_up.sh
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
