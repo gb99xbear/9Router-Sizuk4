@@ -423,7 +423,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
             />
             {providerStrategy === "round-robin" && (
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs text-text-muted">Sticky:</span>
+                <span className="text-xs text-text-muted" title={providerId.includes("tokenharbor") ? "Cluster Pool: Bilangan akaun aktif dalam rotasi (cth: 5 key untuk optimum prompt caching & anti-429)" : "Calls per account before switching"}>{providerId.includes("tokenharbor") ? "Cluster Pool:" : "Sticky:"}</span>
                 <input
                   type="number" min={1} value={providerStickyLimit}
                   onChange={(e) => { setProviderStickyLimit(e.target.value); saveStrategy("round-robin", e.target.value); }}

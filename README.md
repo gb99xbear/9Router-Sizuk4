@@ -1,54 +1,69 @@
-# ⚡ 9Router Sizuk4 Edition
+# 9Router MIBP Version
 
-> High-Performance Universal AI API Gateway with Native Multi-Upstream Routing, Proxy Pool Circuit Breakers, DeepSeek PoW Web Solver, and Dual-Engine Persona Fusion.
+A local AI routing gateway with provider fallback and token-saving features. This is a fork of [decolua/9router](https://github.com/decolua/9router).
 
-Built & maintained by **[gb99xbear](https://github.com/gb99xbear)** & **Sizuk4**.
+## Installation
 
----
+### Option 1: Docker
 
-## ✨ Key Features
+Pull the image:
 
-- 🔀 **Multi-Upstream Routing & Dynamic Load Balancing**: Seamlessly orchestrate OpenAI, Gemini, Claude, Grok, DeepSeek, Antigravity, Kiro, Freebuff, and OpenAI-compatible endpoints with auto-failover and zero-downtime routing.
-- 🛡️ **Advanced Proxy Pool & Circuit Breakers**: Built-in HTTP/SOCKS5 proxy pool rotation with live health checks, automated isolation of dead nodes, and strict egress routing (Cloudflare Workers, Vercel Relays, BrightData Canary).
-- 🧩 **DeepSeek Web PoW Solver**: Native WebAssembly + CJS Proof-of-Work solver for robust direct scraping and headless execution.
-- ⚡ **Connection Chat Probes**: Real-time internal latency and model availability probe engine without touching external quota endpoints.
-- 🎭 **Dual-Engine Fusion & Model Cascading**: Split high-complexity reasoning and persona synthesis across dual backends transparently.
-- 📊 **Modern Real-Time Web Dashboard**: Clean Next.js dashboard featuring catalog whitelisting, live token usage analytics, proxy monitors, and provider management.
-
----
-
-## 🚀 Quick Start
-
-### 1. Prerequisites
-- **Node.js**: >= 20.x
-- **Package Manager**: npm / pnpm / yarn / bun
-
-### 2. Installation
 ```bash
-git clone https://github.com/gb99xbear/9Router-Sizuk4.git
-cd 9Router-Sizuk4
-npm install
+docker pull mhiqrambhrng/9router-mibp-version:latest
 ```
 
-### 3. Environment Setup
+Run the container:
+
 ```bash
+mkdir -p 9router-data
+docker run -d \
+  --name 9router \
+  -p 20128:20128 \
+  -v 9router-data:/app/data \
+  -e DATA_DIR=/app/data \
+  -e PORT=20128 \
+  -e HOSTNAME=0.0.0.0 \
+  -e NODE_ENV=production \
+  -e JWT_SECRET=<generate-with-openssl-rand-hex-32> \
+  -e INITIAL_PASSWORD=<your-dashboard-password> \
+  -e API_KEY_SECRET=<generate-with-openssl-rand-hex-32> \
+  -e MACHINE_ID_SALT=<generate-with-openssl-rand-hex-32> \
+  mhiqrambhrng/9router-mibp-version:latest
+```
+
+Or using Docker Compose (a `docker-compose.yml` is included in this repo):
+
+```bash
+cp .env.example .env   # fill in JWT_SECRET, INITIAL_PASSWORD, API_KEY_SECRET, MACHINE_ID_SALT
+docker compose up -d
+```
+
+Dashboard opens at `http://localhost:20128/dashboard`.
+
+### Option 2: Manual (from source)
+
+Requirements: Node.js 22 or newer.
+
+```bash
+git clone https://github.com/mhiqrambg/9router-mibp-version.git
+cd 9router-mibp-version
+
 cp .env.example .env
-```
+# Edit .env: set JWT_SECRET, INITIAL_PASSWORD, API_KEY_SECRET, MACHINE_ID_SALT
 
-Edit \`.env\` to configure your admin credentials, database path, and server port.
+npm install
 
-### 4. Running the Gateway
-```bash
-# Development mode
+# Development server
 npm run dev
 
-# Production build & start
+# Or production build
 npm run build
-npm start
+npm run start
 ```
 
----
+Dashboard opens at `http://localhost:20128/dashboard`.
 
-## 📄 License
+## More Information
 
-MIT License. Developed with ❤️ by gb99xbear & Sizuk4.
+- Upstream project: [https://github.com/decolua/9router](https://github.com/decolua/9router)
+- Upstream docs: [DOCKER.md](DOCKER.md) • [ARCHITECTURE.md](docs/ARCHITECTURE.md)

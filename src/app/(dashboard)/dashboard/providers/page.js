@@ -318,6 +318,9 @@ export default function ProvidersPage() {
   const freeEntries = Object.entries(FREE_PROVIDERS)
     .filter(
       ([key, info]) =>
+        // OpenCode Free already renders in the connected-providers overview
+        // above; keep it out of this section so it appears only once.
+        key !== "opencode" &&
         !info.hidden &&
         matchSearch(info.name) &&
         matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth),

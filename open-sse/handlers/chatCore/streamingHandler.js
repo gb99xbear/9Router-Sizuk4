@@ -5,6 +5,7 @@ import { pipeWithDisconnect } from "../../utils/streamHandler.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
+import { peekStreamForContent, reconstructStream, isNoRetryFinish } from "../../services/emptyFailover.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
@@ -43,7 +44,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log }) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log, emptyFailoverEnabled }) {
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
@@ -136,6 +137,38 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     }
     // JSON.parse failed (body was actually SSE or text with a JSON header):
     // fall through to the original pipeline untouched.
+  }
+
+  // Empty-stream failover (PLAN-phase1): peek the first bytes before piping.
+  // content / unknown-shape / timeout / no-retry finish -> resume untouched.
+  // OpenAI stream closed with zero content frames -> fail this attempt BEFORE
+  // any byte reaches the client, so the account loop rotates to the next one.
+  if (emptyFailoverEnabled && providerResponse.body && typeof providerResponse.body.getReader === "function") {
+    try {
+      const peek = await peekStreamForContent(providerResponse.body);
+      if (peek.outcome === "empty" && !isNoRetryFinish(peek.finishReason)) {
+        const msg = `upstream empty stream (no content frames) · ${provider}/${model}`;
+        if (log?.errorLine) log.errorLine(reqTag, "✗", `EMPTY-FAILOVER · ${msg}`);
+        streamController?.handleError?.(new Error(msg));
+        return {
+          success: false,
+          status: 502,
+          error: msg,
+          response: new Response(JSON.stringify({ error: { message: msg } }), {
+            status: 502,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          }),
+        };
+      }
+      providerResponse = new Response(reconstructStream(peek.head, peek.reader, peek.pendingRead), {
+        status: providerResponse.status,
+        statusText: providerResponse.statusText,
+        headers: providerResponse.headers,
+      });
+    } catch (err) {
+      // fail-open: the peek itself must never break a stream
+      if (log?.errorLine) log.errorLine(reqTag, "!", `empty-failover peek skipped: ${err?.message || err}`);
+    }
   }
 
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey });

@@ -60,6 +60,10 @@ const nextConfig = {
   async rewrites() {
     return [
       {
+        source: "/api/dashboard/chat/completions",
+        destination: "/api/v1/chat/completions"
+      },
+      {
         source: "/v1/v1/:path*",
         destination: "/api/v1/:path*"
       },

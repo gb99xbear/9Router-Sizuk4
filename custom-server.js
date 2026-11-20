@@ -39,10 +39,12 @@ function startBackgroundTokenRefreshFromCustomServer() {
       process.once("SIGTERM", stop);
     })
     .catch((e) => {
-      // Expected in published CLI standalone (src/ not on disk). App bootstrap covers it.
-      if (process.env.DEBUG_BACKGROUND_TOKEN_REFRESH) {
-        console.error("[BackgroundTokenRefresh] import failed:", e && e.message ? e.message : e);
-      }
+      // src/ may be absent in a published CLI standalone. Always log: a silent
+      // failure here hid a dead OAuth refresher for a full day (17 Nov 2026).
+      console.error(
+        "[BackgroundTokenRefresh] import failed (instrumentation.js should cover this):",
+        e && e.message ? e.message : e
+      );
     });
 }
 

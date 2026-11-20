@@ -25,7 +25,8 @@ const navItems = [
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
-  { href: "/dashboard/injection", label: "Injection", icon: "bolt" },
+  { href: "/dashboard/injection", label: "Alfred God Mode", icon: "shield_person" },
+  { href: "/dashboard/playground", label: "Playground", icon: "science" },
   { href: "/dashboard/proxy-fitness", label: "Proxy Fitness", icon: "network_check" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
@@ -350,7 +351,7 @@ export default function Sidebar({ onClose }) {
 
         <div className="border-t border-border-subtle px-6 py-3 text-center">
           <a
-            href="https://github.com/mhiqrambg/9Router-Sizuk4-version"
+            href="https://github.com/mhiqrambg/9router-mibp-version"
             target="_blank"
             rel="noreferrer"
             className="text-[10px] text-text-muted/60 hover:text-text-muted transition-colors"

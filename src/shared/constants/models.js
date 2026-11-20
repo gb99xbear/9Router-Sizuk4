@@ -33,9 +33,17 @@ export function isValidModel(aliasOrId, modelId) {
 }
 
 // Legacy AI_MODELS for backward compatibility
-export const AI_MODELS = Object.entries(MODELS).flatMap(([alias, models]) =>
-  models.map(m => ({ provider: alias, model: m.id, name: m.name }))
-);
+export const AI_MODELS = [
+  { provider: "kiro", model: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
+  { provider: "kiro", model: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
+  { provider: "kiro", model: "deepseek-3.2", name: "DeepSeek 3.2" },
+  { provider: "kiro", model: "qwen3-coder-next", name: "Qwen3 Coder Next" },
+  { provider: "kiro", model: "glm-5", name: "GLM 5" },
+  { provider: "kiro", model: "minimax-m2.5", name: "MiniMax M2.5" },
+  ...Object.entries(MODELS).flatMap(([alias, models]) =>
+    models.map(m => ({ provider: alias, model: m.id, name: m.name }))
+  )
+];
 
 export const getModelKind = (m, fallback = null) => m?.kind || m?.type || fallback;
 

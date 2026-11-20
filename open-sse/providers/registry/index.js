@@ -1,3 +1,5 @@
+import pOC from "./opencode.js";
+import pOCZ from "./opencode-zen.js";
 // Auto-generated: static imports for all registry entries
 import p0 from "./alicode-intl.js";
 import p1 from "./alicode.js";
@@ -124,6 +126,8 @@ import p124 from "./deepseek-web.js";
 import p122 from "./ollama-search.js";
 
 export default [
+  pOC,
+  pOCZ,
   p0,
   p1,
   p2,

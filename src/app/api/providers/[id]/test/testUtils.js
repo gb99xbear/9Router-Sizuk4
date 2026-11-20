@@ -18,6 +18,7 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { normalizeAuthType, isApiKeyAuth } from "@/shared/utils/authType";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -863,7 +864,7 @@ export async function testSingleConnection(id) {
   const start = Date.now();
   let result;
 
-  if (connection.authType === "apikey" || connection.authType === "cookie") {
+  if (isApiKeyAuth(connection.authType) || normalizeAuthType(connection.authType) === "cookie") {
     result = await testApiKeyConnection(connection, effectiveProxy);
   } else {
     result = await testOAuthConnection(connection, effectiveProxy);

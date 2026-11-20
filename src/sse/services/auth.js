@@ -232,11 +232,20 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         if (pDiff !== 0) return pDiff;
         return String(a.id || '').localeCompare(String(b.id || ''));
       });
-      // Skip keys already reserved by another live request. If EVERY key is
-      // in flight we still fall through to the raw pointer (better a possible
-      // collision than a hard failure — upstream will 429 and we rotate).
-      const free = sorted.filter((c) => !isConnectionInFlight(c.id));
-      const pool = free.length > 0 ? free : sorted;
+
+      // Cluster Pool Khas TokenHarbor Sahaja:
+      // Provider lain (termasuk Antigravity) WAJIB guna semua sorted akaun tanpa slice/limit!
+      let poolCandidates = sorted;
+      if (providerId.includes("tokenharbor")) {
+        const stickyLimit = Number(providerOverride.stickyRoundRobinLimit) || 5;
+        if (stickyLimit > 0 && sorted.length > stickyLimit) {
+          poolCandidates = sorted.slice(0, stickyLimit);
+        }
+      }
+
+      // Skip keys already reserved by another live request.
+      const free = poolCandidates.filter((c) => !isConnectionInFlight(c.id));
+      const pool = free.length > 0 ? free : poolCandidates;
 
       if (pool.length > 0) {
         const rkey = providerId + "::" + (model || "*");
@@ -310,8 +319,44 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @param {string|null} model - The specific model that triggered the error
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
+// Terminal error class: retrying it on another account cannot help.
+const CONTEXT_WINDOW_ERROR =
+  /longer than the model|context window|context length|maximum context|too many tokens|reduce the length/i;
+
+// THK IP-block 403: a per-EGRESS block ("Requests from this network address
+// ... are not accepted"), not a per-key problem. Locking the key cannot help -
+// the next key from the same egress 403s identically. Scoped to the
+// tokenharbor provider only: skip silently (no model lock) so failover keeps
+// hunting for a key on a different egress, and the key stays pickable.
+const THK_IP_BLOCK_403 = /network address|shared host|proxy or a cloudflare worker/i;
+
+// Account/network-level throttle: the provider is slowing down THIS ACCOUNT,
+// not one model. Locking a single model with it leaves the key pickable for
+// every other model, so it gets re-throttled seconds later. These error texts
+// must lock the account (modelLock___all) instead.
+const ACCOUNT_LEVEL_THROTTLE =
+  /under heavy load|server_busy|network rate limit|being slowed down|for this minute|content-policy grounds|shared allowance|free allowance/i;
+
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, retryAfterMs = 0) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+
+  if (
+    status === 403 &&
+    provider &&
+    String(provider).includes("tokenharbor") &&
+    THK_IP_BLOCK_403.test(String(errorText || ""))
+  ) {
+    log.warn("AUTH", `THK IP-block 403 (per-egress, bukan per-key) - skip tanpa lock: ${connectionId.slice(0, 8)}`);
+    releaseConnectionInFlight(connectionId);
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
+
+  // A context-window overflow is a client-shape error: no other account can serve
+  // it, so failover is pointless. Rotating accounts re-uploads the entire
+  // oversized prompt (through the relay) for a request that can never succeed.
+  if (CONTEXT_WINDOW_ERROR.test(String(errorText || ""))) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
   // Request is finished (failed) — hand the key back to the rotation pool.
   releaseConnectionInFlight(connectionId);
   const connections = await getProviderConnections({ provider });
@@ -347,7 +392,9 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 1000) : "Provider error";
-  const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
+  const accountLevel = githubResetAtMs
+    || ACCOUNT_LEVEL_THROTTLE.test(String(errorText || ""));
+  const lockUpdate = buildModelLockUpdate(accountLevel ? null : model, cooldownMs);
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,

@@ -52,6 +52,7 @@ export default function CombosPage() {
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
   const [capacityAdapter, setCapacityAdapter] = useState(EMPTY_CAPACITY_ADAPTER);
+  const [emptyFailoverEnabled, setEmptyFailoverEnabled] = useState(false);
   const { getCaps } = useModelCaps();
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
@@ -77,6 +78,7 @@ export default function CombosPage() {
         setActiveProviders(providersData.connections || []);
       }
       setComboStrategies(settingsData.comboStrategies || {});
+      setEmptyFailoverEnabled(!!settingsData.emptyFailoverEnabled);
       const rawAdapter = settingsData.capacityAdapter || {};
       const normalized = {};
       for (const cap of CAPACITY_ADAPTER_CAPS) {
@@ -100,6 +102,19 @@ export default function CombosPage() {
       });
     } catch (error) {
       console.log("Error updating capacity adapter:", error);
+    }
+  };
+
+  const handleSetEmptyFailover = async (v) => {
+    setEmptyFailoverEnabled(v);
+    try {
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emptyFailoverEnabled: v }),
+      });
+    } catch (error) {
+      console.log("Error updating empty-stream failover:", error);
     }
   };
 
@@ -211,6 +226,28 @@ export default function CombosPage() {
           Create Combo
         </Button>
       </div>
+
+      {/* Empty-stream failover */}
+      <Card>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-[18px]">sync_problem</span>
+              <span className="font-medium text-text-main">Empty-stream failover</span>
+            </div>
+            <p className="text-sm text-text-muted mt-1">
+              Stream upstream yang tutup tanpa isi (tiada content frame) gagalkan account ini SEBELUM apa-apa sampai ke
+              client, lepas tu rotate ke account seterusnya. Fail-open: format tak dikenal, timeout lambat, atau
+              finish macam content_filter tetap lepas macam biasa.
+            </p>
+          </div>
+          <Toggle
+            checked={emptyFailoverEnabled}
+            onChange={handleSetEmptyFailover}
+            aria-label="Empty-stream failover"
+          />
+        </div>
+      </Card>
 
       {/* Combos List */}
       {combos.length === 0 ? (

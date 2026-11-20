@@ -323,6 +323,18 @@ async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, ref
   return profileArn ? { providerSpecificData: { profileArn } } : {};
 }
 
+/**
+ * True when a Kiro refresh failure means the refresh token is dead (revoked /
+ * expired / reused). Such a failure must be classified as unrecoverable so the
+ * background scheduler parks the connection; returning plain null made it retry
+ * every 5 minutes for ever.
+ */
+function kiroRefreshIsPermanent(status, errorText) {
+  const s = String(errorText || "").toLowerCase();
+  if (status === 401 || status === 403) return true;
+  return /access_denied|invalid_grant|invalid_token|token_expired|token_expir|refresh_token_(expired|reused|invalidated)|revoked/.test(s);
+}
+
 export async function refreshKiroToken(refreshToken, providerSpecificData, log, proxyOptions = null) {
   if (!refreshToken) return null;
   return dedupRefresh("kiro", refreshToken, async () => {
@@ -396,10 +408,13 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
 
     if (!response.ok) {
       const errorText = await response.text();
+      const permanent = kiroRefreshIsPermanent(response.status, errorText);
       log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro AWS token", {
         status: response.status,
         error: errorText,
+        permanent,
       });
+      if (permanent) return { error: "unrecoverable_refresh_error", code: String(response.status) };
       return null;
     }
 
@@ -432,10 +447,13 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
 
   if (!response.ok) {
     const errorText = await response.text();
+    const permanent = kiroRefreshIsPermanent(response.status, errorText);
     log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro social token", {
       status: response.status,
       error: errorText,
+      permanent,
     });
+    if (permanent) return { error: "unrecoverable_refresh_error", code: String(response.status) };
     return null;
   }
 

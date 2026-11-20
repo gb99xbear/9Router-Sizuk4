@@ -24,6 +24,11 @@ export default {
     headers: {
       "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
     },
+    // AG upstream is streaming-first: a non-stream generateContent makes the
+    // Vercel relay wait for the whole body and die at its invocation limit
+    // (~81s -> FUNCTION_INVOCATION_TIMEOUT 504). Force the SSE upstream path;
+    // non-stream clients are aggregated by handleForcedSSEToJson.
+    forceStream: true,
     retry: {
       "429": {
         attempts: 3,

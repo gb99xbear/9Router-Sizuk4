@@ -331,12 +331,10 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   // account and triggers 403 "bearer token invalid", so never fall back to it —
   // send the resolved ARN, or an empty string so CodeWhisperer uses the token's
   // own default profile. Only OAuth/social keep the shared placeholder.
-  const authMethod = credentials?.providerSpecificData?.authMethod;
-  const accountBoundAuth =
-    authMethod === "api_key" || authMethod === "idc" || authMethod === "external_idp";
-  const profileArn = accountBoundAuth
-    ? (credentials?.providerSpecificData?.profileArn || "")
-    : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
+  const psd = credentials?.providerSpecificData || {};
+  const authMethod = psd.authMethod;
+  // Always use the real profileArn associated with the connection if available
+  const profileArn = psd.profileArn || credentials?.profileArn || resolveDefaultProfileArn(authMethod);
 
   const timestamp = new Date().toISOString();
 
@@ -355,7 +353,11 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   const contentPrefix = [systemPrompt, currentTimeContext].filter(Boolean).join("\n\n");
 
   const sessionIdentity = resolveSessionIdentity({ headers: credentials?.rawHeaders, body, connectionId: credentials?.connectionId, scope: "kiro" });
-  const conversationId = sessionIdentity.sessionId;
+  let conversationId = sessionIdentity.sessionId;
+  // Kiro upstream requires a strict 36-char UUID for conversationId
+  if (!conversationId || conversationId.length > 36) {
+    conversationId = crypto.randomUUID();
+  }
   const continuationId = resolveContinuationId({
     sessionId: conversationId,
     connectionId: credentials?.connectionId,
@@ -417,6 +419,8 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     agentMode: "vibe",
   };
 
+  // Ensure top-level systemPrompt is NEVER attached to Kiro wire payload
+  delete payload.systemPrompt;
   if (profileArn) {
     payload.profileArn = profileArn;
   }

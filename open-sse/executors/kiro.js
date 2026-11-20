@@ -5,6 +5,7 @@ import {
   KIRO_ENDPOINT_FALLBACK_STATUSES,
   resolveKiroModel,
 } from "../config/kiroConstants.js";
+import { buildKiroIdentityHeaders } from "../shared/kiroIdentity.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
@@ -229,6 +230,7 @@ export class KiroExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true, url = "") {
     const headers = {
       ...this.config.headers,
+      ...buildKiroIdentityHeaders(credentials, "streaming"),
       "Amz-Sdk-Request": "attempt=1; max=3",
       "Amz-Sdk-Invocation-Id": uuidv4()
     };
@@ -343,7 +345,9 @@ export class KiroExecutor extends BaseExecutor {
    */
   async execute(args) {
     const result = await super.execute(args);
-    if (result?.response?.ok) this.attachIntegrityGate(result, args);
+    if (result?.response?.ok) {
+      result.response = this.transformEventStreamToSSE(result.response, args.model, {});
+    }
     return result;
   }
 

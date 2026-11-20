@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -85,6 +85,22 @@ export const TABLES = {
       createdAt: "TEXT NOT NULL",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
+  },
+  relayBytes: {
+    // Real-time egress meter: bytes that pass through a Vercel relay per day.
+    // Vercel's public billing API lags ~7 days, so this is the only live source
+    // for Fast Origin Transfer. inBytes dominates (>99%) - it is the request body.
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      day: "TEXT NOT NULL",
+      relayHost: "TEXT",
+      targetHost: "TEXT",
+      requests: "INTEGER DEFAULT 0",
+      inBytes: "INTEGER DEFAULT 0",
+      outBytes: "INTEGER DEFAULT 0",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_rb_day ON relayBytes(day)"],
   },
   combos: {
     columns: {

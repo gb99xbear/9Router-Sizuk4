@@ -105,6 +105,30 @@ export async function GET(request) {
       });
     }
 
+        // Pastikan kesemua 6 model sah Kiro terpapar dalam API /api/models
+    const kiroExtra = [
+      { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
+      { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
+      { id: "deepseek-3.2", name: "DeepSeek 3.2" },
+      { id: "qwen3-coder-next", name: "Qwen3 Coder Next" },
+      { id: "glm-5", name: "GLM 5" },
+      { id: "minimax-m2.5", name: "MiniMax M2.5" }
+    ];
+    for (const km of kiroExtra) {
+      const full = `kr/${km.id}`;
+      if (!models.some(m => m.fullModel === full)) {
+        models.push({
+          provider: "kiro",
+          model: km.id,
+          name: km.name,
+          fullModel: full,
+          routedModel: full,
+          alias: km.id,
+          caps: { vision: true, search: false, reasoning: true, contextWindow: 200000, maxOutput: 32000 }
+        });
+      }
+    }
+
     return NextResponse.json({ models });
   } catch (error) {
     console.log("Error fetching models:", error);

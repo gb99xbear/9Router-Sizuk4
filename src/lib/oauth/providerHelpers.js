@@ -60,7 +60,7 @@ export async function fetchKiroProfileArn(accessToken) {
         Accept: "application/json",
         Authorization: `Bearer ${accessToken}`,
       },
-      body: JSON.stringify({ maxResults: 10 }),
+      body: JSON.stringify({}),
     });
     if (!response.ok) return null;
     const data = await response.json();

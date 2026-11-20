@@ -71,7 +71,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic }) {
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, onModelsBatchChanged, connections, isAnthropic }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -141,17 +141,31 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         alert("No models returned from /models.");
         return;
       }
-      let importedCount = 0;
-      for (const model of models) {
-        const modelId = model.id || model.name || model.model;
-        if (!modelId) continue;
-        if (allModels.some((entry) => entry.id === modelId)) continue;
-        await onAddCustomModel(modelId);
-        importedCount += 1;
-      }
-      if (importedCount === 0) {
+      // MODELS_BATCH_FAST: one request for the whole list instead of one per
+      // model. 100 models used to mean 100 round-trips plus 100 list refreshes.
+      const fresh = models
+        .map((model) => model.id || model.name || model.model)
+        .filter(Boolean)
+        .filter((modelId) => !allModels.some((entry) => entry.id === modelId));
+      if (fresh.length === 0) {
         alert("No new models were added.");
+        return;
       }
+      const batchRes = await fetch("/api/models/custom/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          providerAlias: providerStorageAlias,
+          models: fresh.map((id) => ({ id, type: "llm" })),
+        }),
+      });
+      if (!batchRes.ok) {
+        const err = await batchRes.json().catch(() => ({}));
+        alert(err.error || "Failed to import models");
+        return;
+      }
+      if (onModelsBatchChanged) await onModelsBatchChanged();
+      window.dispatchEvent(new CustomEvent("customModelChanged"));
     } catch (error) {
       console.log("Error importing models:", error);
     } finally {
@@ -164,17 +178,21 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     if (!confirm(`Delete ALL ${allModels.length} model(s) for this provider? This cannot be undone.`)) return;
     setDeletingAll(true);
     try {
-      let deleted = 0;
-      for (const { id, alias, source } of allModels) {
-        try {
-          if (source === "custom") await onDeleteCustomModel(id);
-          else await onDeleteAlias(alias);
-          deleted += 1;
-        } catch (error) {
-          console.log("Error deleting model:", id, error);
-        }
+      // MODELS_BATCH_FAST: wipe the whole list in one request.
+      const customIds = allModels.filter((m) => m.source === "custom").map((m) => m.id);
+      const aliases = allModels.filter((m) => m.source !== "custom" && m.alias).map((m) => m.alias);
+      const delRes = await fetch("/api/models/custom/batch", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerAlias: providerStorageAlias, ids: customIds, aliases }),
+      });
+      if (!delRes.ok) {
+        const err = await delRes.json().catch(() => ({}));
+        alert(err.error || "Failed to delete models");
+        return;
       }
-      if (deleted === 0) alert("No models were deleted.");
+      if (onModelsBatchChanged) await onModelsBatchChanged();
+      window.dispatchEvent(new CustomEvent("customModelChanged"));
     } finally {
       setDeletingAll(false);
     }

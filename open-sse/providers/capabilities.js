@@ -83,6 +83,9 @@ export function capabilitiesFromServiceKind(kind) {
  * otherwise mis-match. Only declare deltas vs DEFAULT.
  */
 export const MODEL_CAPABILITIES = {
+  // Inception Mercury 3 - diffusion LLM. 1M context, 131,072 output
+  // (source: docs.inceptionlabs.ai/get-started/models + live /v1/models)
+  "mercury-3": { vision: false, reasoning: true, tools: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
   // Claude Fable 5.1, Opus 5, 4.6/4.7/4.8, and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
   "claude-fable-5-1": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
   "claude-opus-5":     { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
@@ -146,18 +149,22 @@ export const MODEL_CAPABILITIES = {
   // the same source this module's loader reads. Corrects 9Router defaults that both
   // under- (200K on 1M models -> premature compaction) and over- (1M on 200K models
   // -> upstream 400/truncation) claimed the window.
-  "big-pickle":                       { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "big-pickle":                       { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
   "beam-free":                        { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
   "cat-jam-free":                     { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
-  "deepseek-v4.1-flash-free":         { vision: true,  reasoning: true, thinkingFormat: "deepseek", contextWindow: 1048576, maxOutput: 131072 },
+  "deepseek-v4.1-flash-free":         { vision: true,  reasoning: true, thinkingFormat: "deepseek", contextWindow: 200000, maxOutput: 32000 },
   "exo-free":                         { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
   "ll-alpha-free":                    { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 262144,  maxOutput: 65536  },
   "longcat-2.5-preview-free":         { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
-  "mimo-v2.6-flash-free":             { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "mimo-v2.6-flash-free":             { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
   "nemotron-3.5-lightning-free":      { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 262144,  maxOutput: 262144 },
   "nemotron-3.5-super-vl-free":       { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
   "muse-spark-1.2-contributor-free":  { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
   "muse-spark-1.3-contributor-free":  { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "glm-5.3-flash-free":               { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
+  "flint-40b-free":                   { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 262144, maxOutput: 65536 },
+  "crouton-alpha-free":               { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 270000 },
+  "pulse-alpha-free":                 { vision: true,  reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
 };
 
 const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
@@ -290,10 +297,12 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*gpt-3.5*",       caps: { contextWindow: 16385, maxOutput: 4096 } },
   { pattern: "*gpt-oss*",       caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },
 
-  // ── Cline free tier: Upstage Solar Pro + LongCat (agentic coding models;
-  // windows unverified — 200K/32K conservative, same as laguna:free).
-  // NOTE: placed before the o-series catch-alls — "solar-pro4" contains "o4".
-  { pattern: "*solar-pro*",     caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
+  // ── Cline free tier: Upstage Solar Pro + LongCat (agentic coding models).
+  // Solar figures are the published ones: Upstage's catalog lists solar-pro4
+  // and solar-mini4 at a 512K context window with 128K max output.
+  // NOTE: must stay before the o-series catch-alls — "solar-pro4" contains "o4".
+  { pattern: "*solar-pro*",     caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 512000, maxOutput: 128000 } },
+  { pattern: "*solar-mini*",    caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 512000, maxOutput: 128000 } },
   { pattern: "*longcat*",       caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
 
   // ── OpenAI o-series (reasoning, vision) ──────────────────────────
@@ -391,9 +400,21 @@ export const PATTERN_CAPABILITIES = [
   // ── OpenCode Free Muse Spark (multimodal text+image; OpenAI Responses reasoning supports up to xhigh) ─
   { pattern: "*muse*spark*",    caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 } },
   // ── Others ───────────────────────────────────────────────────────
+  // Hunyuan 4 (hy4 / hy4-preview / hy4:free): 1,000,000-token context,
+  // 64,000 max output (mirrors the codebuddy-cn hy4-preview entry). Declared so
+  // providers serving hy4 directly (e.g. crowllm) resolve the real limits
+  // instead of the 200K/64K default.
+  { pattern: "hy4*",            caps: { contextWindow: 1000000, maxOutput: 64000 } },
   { pattern: "*hunyuan*",       caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "hy3*",            caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
+  // StepFun Step-5 family. Published by the model card and OpenRouter:
+  //   1,048,576 token context window, 64,000 max output, text+image+video in.
+  // Declared explicitly so non-CodeBuddy providers (e.g. omop.ai.id, bans)
+  // resolve the real limits instead of falling to the 128K generic below.
+  { pattern: "*step-5-preview*", caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "step", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 64000 } },
+  { pattern: "*step-5*",        caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "step", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 64000 } },
   { pattern: "*step-*",         caps: { reasoning: true, thinkingFormat: "step", contextWindow: 128000 } },
+  { pattern: "*nemotron-3-ultra-550b-a55b*", caps: { reasoning: true, contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*nemotron*",      caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
 ];
