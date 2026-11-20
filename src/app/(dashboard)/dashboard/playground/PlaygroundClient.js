@@ -435,11 +435,8 @@ export default function PlaygroundClient() {
 
                 {agentResult && (
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-medium">
-                      <span className="text-text-muted">Tool loop:</span>
-                      <span className={"font-mono font-semibold " + verdictColor(agentResult.verdict)}>
-                        {String(agentResult.verdict)}
-                      </span>
+                    <div className="text-xs font-medium text-text-muted">
+                      Tool loop: <span className={"font-mono font-semibold " + verdictColor(agentResult.verdict)}>{String(agentResult.verdict)}</span>
                     </div>
 
                     <button
